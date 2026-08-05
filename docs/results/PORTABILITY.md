@@ -8,9 +8,13 @@ and asserts each detector signal reads correctly.
 
 **Proves:** the drivers' parsing, fusion, timing and process handling are portable —
 same results across OS, tmux version, and Python version.
-**Does not prove:** real-CLI behavior on the target OS. Real-claude-on-Linux is declared
+**Does not prove:** real-CLI behavior on the target OS. Real-claude-on-**Linux** is declared
 UNVERIFIED (blocked: devbox requires a Tailscale SSH browser approval only the owner can
 grant; putting the owner's OAuth credentials into a container was rejected as a way around it).
+
+Real-CLI behavior on **Windows** IS verified separately and directly — an interactive
+`claude.exe` was hosted, driven and observed on all four channels on windesk. That leg did
+not need the mock.
 
 ## Results
 
@@ -18,7 +22,7 @@ grant; putting the owner's OAuth credentials into a container was rejected as a 
 |---|---|---|---|
 | macOS 25.5.0 (arm64) | 3.7b | 3.9.6 | **15/15** |
 | Debian bookworm (podman, arm64) | 3.3a | 3.11.2 | **15/15** |
-| Windows 11 build 26200 | none | none on PATH | see `docs/.research/empirical/windows-leg.md` |
+| Windows 11 build 26200 | n/a (node ConPTY host) | node 26.3.0 | **all 4 channels verified live** — see `docs/.research/empirical/windows-leg.md` |
 
 Signals verified identically on both: trust dialog copy, idle prompt, busy spinner shape,
 the past-tense completion form NOT matching the busy predicate, the tool-run line, the

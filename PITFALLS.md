@@ -57,6 +57,21 @@ Hard-won traps. Read before working on this project. Each entry: trap → fix.
 - **Hook-log appends must stay under PIPE_BUF to be atomic.** Cap the payload, strip
   newlines, and use TSV framing — JSON-wrapping-JSON loses the whole event on truncation.
 
+## Windows hosting (verified live on windesk, 2026-08-05)
+
+- **Hook commands cannot use `>>` redirection on Windows.** The redirect is eaten by an
+  outer shell and `cmd` then runs interactively, capturing the hook's stdin payload
+  instead of writing a sentinel. Hook commands must be script invocations that read stdin
+  (`node hook.js`, `pwsh -File hook.ps1`).
+- **`Start-Process -RedirectStandardOutput/-RedirectStandardError` silently kills a
+  ConPTY spawn.** Do not redirect std handles when hosting a PTY.
+- **A process launched from an SSH command dies when that SSH session ends.** To detach,
+  register a per-user scheduled task (`schtasks`) — verified surviving into a later,
+  separate SSH session.
+- **fnm's `node` is not on any non-interactive PATH** — use the absolute path.
+- **`procStart` in the sidecar is a Windows FILETIME integer string**, not a ctime string
+  like macOS. Any parser must handle both.
+
 ## Screen capture region (found by the mock-agent fixture, 2026-08-05)
 
 - **Never match liveness over scrollback.** `capture-pane -S -N` returns history, which

@@ -134,23 +134,41 @@ ecosystem's shape [SYNTHESIS 2]): `launch, attach, send, keys, screen, state, wa
 answer_dialog, kill` — each returning typed results; `state` returns
 `{state, attrs, evidence: [{channel, signal, at}]}` so consumers can audit *why*.
 
+**Windows decision RESOLVED by Phase 4 evidence** (docs/.research/empirical/windows-leg.md):
+
 ```
             driver core (state fusion, watchdog, dialog literals, version pins)
                  │
-     ┌───────────┼──────────────────┐
-     ▼           ▼                  ▼
- tmux backend   wezterm/kitty     ConPTY backend (Windows)
- (macOS/Linux)  backend           options, decision Phase 4:
- capture-pane   (all 3 OSes;      – wezterm native (also col. 2)
- + send-keys    native Windows;   – PTY session daemon (gist map)
-                get-text/send)    – headless stream-json only (no TUI)
+     ┌───────────┴───────────────────────┐
+     ▼                                   ▼
+ tmux backend                       node ConPTY host (Windows)
+ (macOS/Linux)                      node-pty + @xterm/headless, ~90 lines
+ capture-pane -p  + send-keys       user-scope npm, no admin/compiler/tmux/WSL
+                                    detach via per-user schtasks
 ```
 
-- tmux is the mature Unix surface; **wezterm/kitty are the only credible cross-platform
-  native capture surfaces found** [SYNTHESIS 1.1] — the Windows decision is explicitly
-  deferred to Phase 4 evidence (Q2: daemon verbs with no console attached, untested; gist
-  rates it "can kill the entire PTY branch").
-- windesk reality check: no tmux; pwsh 7.6.3; claude.exe 2.1.222 present (STATE.md).
+All four channels survive the port — sidecar, hooks, transcript, and rendered screen —
+so the state model is the same on all three OSes; only the hosting layer differs.
+
+- **The sidecar is cross-platform and identical.** `~/.claude/sessions/<pid>.json` appears
+  after the trust dialog with `kind: "interactive"`, transitions `busy`→`idle`, and emits
+  the *same literal* `waitingFor: "permission prompt"`. Clean `/exit` deletes it;
+  `Stop-Process -Force` leaves it stale — the same liveness guard applies. One schema
+  divergence: `procStart` is a Windows FILETIME integer string, not a ctime string.
+- **The macOS deny-latch reproduces on Windows** (denial emits zero hook events, not even
+  `Stop`) — and the sidecar clears to `idle` within one poll. On Windows the sidecar is
+  what closes the hook-only hole; this is the strongest argument for fusion in the project.
+- **The screen channel is still required** even with sidecar+hooks+transcript: the trust
+  dialog paints before any sidecar or `SessionStart` exists, and the sidecar carries no
+  dialog option text, so it can detect a dialog but never answer one.
+- **Windows hosting is strictly better than tmux for evidence**: owning the raw ConPTY
+  stream makes OSC/BEL/alt-screen bytes visible, which `capture-pane` structurally cannot
+  see (Q8 needed `script(1)` on macOS for exactly this reason).
+- **Rejected on the gist's documentary grounds**: winpty/pywinpty (console scraping,
+  superseded; loopback-TCP race), `wt.exe` (needs a GUI), and the seven standalone PTY
+  daemons (bought nothing the 90-line host didn't).
+- PID discovery is simpler here: `ptyProcess.pid` == claude PID == sidecar filename, so
+  the macOS PID-discovery trap does not exist on this architecture.
 
 ## 6. Failure-mode analysis — by mechanism
 
