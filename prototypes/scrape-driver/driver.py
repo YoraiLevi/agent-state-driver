@@ -187,6 +187,13 @@ def observe(s: Session, history: list) -> dict:
     hash_motion = len(set(recent)) > 1 if len(recent) >= 2 else True
     stable = len(recent) >= STABLE_N and len(set(recent[-STABLE_N:])) == 1
 
+    # NOTE (2026-08-05): motion is necessary but NOT sufficient for busy — a
+    # statusline with a live wall-clock moves the hash while idle (found by the
+    # fused prototype as `conflict: sidecar=idle screen=busy`). This screen-only
+    # prototype has no second channel to defer to, so it keeps motion in the busy
+    # predicate and accepts the false-busy; that is the measured cost of a
+    # single-channel design and is declared, not hidden. The fused driver treats
+    # motion-without-regex as inconclusive instead.
     if busy_regex or (hash_motion and not stable):
         s.touch_evidence()
         # staleness check: busy asserted with no fresh evidence for too long

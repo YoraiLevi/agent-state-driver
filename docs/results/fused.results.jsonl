@@ -1,0 +1,7 @@
+{"scenario": "S1", "event": "first_idle", "ok": true, "t_truth": 1785956994.781922, "t_detect": 1785957008.102697, "delta_s": 13.3, "state": "idle", "at": 1785957008.102704}
+{"scenario": "S2", "event": "busy_report", "ok": null, "inconclusive": "turn ended during the driver call", "state": "idle", "at": 1785957017.682508}
+{"scenario": "S2", "event": "turn_complete", "ok": true, "truth_pong_on_screen": true, "t_truth": 1785957008.106931, "t_detect": 1785957017.732297, "delta_s": 9.6, "at": 1785957017.736096}
+{"scenario": "S4", "event": "send", "ok": true, "detail": {"sent": true, "verified_on_screen": true}, "at": 1785957023.185945}
+{"scenario": "S4", "event": "perm_detected", "ok": true, "truth_dialog": true, "state": "waiting:permission", "t_detect": 1785957025.279233, "screen": null, "at": 1785957025.2949388}
+{"scenario": "S4", "event": "deny_verified", "ok": true, "file_absent": true, "at": 1785957025.8375602}
+{"scenario": "S6", "event": "dead_detected", "ok": true, "state": "dead", "pid": 89518, "truth_source": "pid_exit", "t_truth": 1785957031.045216, "t_detect": 1785957031.0761669, "term_to_proc_death_s": 0.81, "delta_s": 0.03, "at": 1785957031.076173}

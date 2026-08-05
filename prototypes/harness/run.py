@@ -18,6 +18,7 @@ Python 3.9+, stdlib only. Each (driver, scenario) runs in a fresh workdir.
 import argparse
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -101,6 +102,22 @@ def discover_session(workdir):
     return None, None
 
 
+# The harness's own busy oracle. Deliberately NOT imported from any driver's
+# patterns module — a referee that shares the subject's detector cannot referee it.
+HARNESS_BUSY_RE = re.compile(r"[^\w\s]\s+\S+…\s*\(\d+s|⎿\s+Running…\s*\(\d+s")
+HARNESS_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07")
+
+
+def harness_busy(sock, sid):
+    """True/False if the harness can see the pane, None if it cannot."""
+    if not sock:
+        return None
+    cap = Truth.capture(sock, sid[:8])
+    if cap is None:
+        return None
+    return bool(HARNESS_BUSY_RE.search(HARNESS_ANSI_RE.sub("", cap)))
+
+
 def snap(workdir, sid, lines=14):
     """Harness's own screen snapshot — evidence attached to any failed check.
     Independent of the driver under test (FMA: never trust the subject's report)."""
@@ -144,9 +161,25 @@ def s2_trivial_turn(driver, workdir, sid, results):
         return
     # ground truth for busy: harness's own capture shows spinner-ish motion;
     # ground truth for done: two identical consecutive harness captures with pong
+    # Bracket the driver call with the harness's OWN captures and derive the truth
+    # from them. Asserting "must be busy here" is an assumption, not ground truth:
+    # a trivial turn can finish inside the driver's own settle window, and scoring
+    # a correct `idle` as wrong teaches the wrong lesson (2026-08-05).
+    truth_before = harness_busy(sock, sid)
     rep_busy, _ = jrun(driver, workdir, "state", "--id", sid)
-    record(results, scenario="S2", event="busy_report", state=rep_busy.get("state"),
-           expected="busy", ok=rep_busy.get("state") == "busy")
+    truth_after = harness_busy(sock, sid)
+    if truth_before is False and truth_after is False:
+        record(results, scenario="S2", event="busy_report", ok=None,
+               inconclusive="turn finished before the driver could be asked",
+               state=rep_busy.get("state"))
+    elif truth_before is True and truth_after is True:
+        record(results, scenario="S2", event="busy_report", state=rep_busy.get("state"),
+               expected="busy", truth="busy throughout",
+               ok=rep_busy.get("state") == "busy")
+    else:
+        record(results, scenario="S2", event="busy_report", ok=None,
+               inconclusive="turn ended during the driver call",
+               state=rep_busy.get("state"))
     rep2, rc = jrun(driver, workdir, "wait", "--id", sid, "--until", "idle",
                     "--timeout", "90")
     t_idle_detect = time.time()

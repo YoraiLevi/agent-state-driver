@@ -1,0 +1,7 @@
+{"scenario": "S1", "event": "first_idle", "ok": true, "t_truth": 1785957078.034693, "t_detect": 1785957082.0164502, "delta_s": 4.0, "state": "idle", "at": 1785957082.016458}
+{"scenario": "S2", "event": "busy_report", "state": "busy", "expected": "busy", "truth": "busy throughout", "ok": true, "at": 1785957082.525568}
+{"scenario": "S2", "event": "turn_complete", "ok": true, "truth_pong_on_screen": true, "t_truth": 1785957082.020499, "t_detect": 1785957085.432411, "delta_s": 3.4, "at": 1785957085.4380429}
+{"scenario": "S4", "event": "send", "ok": true, "detail": {"sent": true, "verified_by_hook": true, "hook_latency_s": 0.11}, "at": 1785957085.9089978}
+{"scenario": "S4", "event": "perm_detected", "ok": true, "truth_dialog": true, "state": "waiting:permission", "t_detect": 1785957093.3723142, "screen": null, "at": 1785957093.385399}
+{"scenario": "S4", "event": "deny_verified", "ok": false, "file_absent": true, "at": 1785957154.119051}
+{"scenario": "S6", "event": "dead_detected", "ok": true, "state": "dead", "pid": 90966, "truth_source": "pid_exit", "t_truth": 1785957158.4342332, "t_detect": 1785957158.472847, "term_to_proc_death_s": 0.81, "delta_s": 0.04, "at": 1785957158.472856}
