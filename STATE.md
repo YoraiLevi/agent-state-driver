@@ -22,8 +22,13 @@ Phase 0 (infrastructure) — in progress. Phases: 0 infra · 1 prior-art researc
 - claude CLI 2.1.222. `--safe-mode` keeps auth working; virgin `CLAUDE_CONFIG_DIR` breaks auth (hits login picker) — verified live.
 - Readiness ground truth for Claude Code TUI: `❯` prompt is rendered even mid-generation; the true busy
   signal is `esc to interrupt` presence; a settle count is needed because the spinner clears before final render.
-- windesk + devbox exist on Tailscale (`*.tail366b93.ts.net`), reachable, but user `m5air` is rejected;
-  correct remote usernames unknown. devbox runs Tailscale SSH.
+- **windesk: WORKING** — `devic@windesk` (pubkey SSH). Windows 11 (NT 10.0.26200), pwsh 7.6.3 default
+  shell, git, Docker Desktop, podman, WSL, node, claude.exe 2.1.222. NO tmux. Beware: `claude` is an
+  `Invoke-Claude` profile wrapper (auto-mode, skip-permissions, strict-mcp, cd-to-claude-tmp, resets
+  mouse-tracking escapes) — drive `claude.exe` directly. `%TEMP%\claude-tmp` holds prior experiments
+  incl. altscreen_1049.txt (alt-screen buffer notes) — mine in Phase 1/2.
+- devbox: `yorai@devbox` is the right user but Tailscale SSH hangs awaiting (likely) browser approval —
+  owner action needed; Linux falls back to local podman meanwhile.
 
 ## Prior research in hand
 
