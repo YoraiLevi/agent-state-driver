@@ -90,13 +90,20 @@ Reliability table, empirically grounded. "Proof" = state is certain when signal 
 | **Transcript JSONL** | turn boundaries + wall-clock (`turn_duration`), hook-ran proof (`stop_hook_summary`), compaction, permission-mode; subagent fan-out via `subagents/` sidecar tree (both OSes, Q11-settled) | FS-watch-bound | undocumented schema, version-fragile [SYNTHESIS 1.4]; forks need `sessionId`/`forkedFrom` tracking | both |
 | **stream-json** (`-p --include-hook-events --include-partial-messages`) | richest: token-level busy, api_retry, hook lifecycle inline | stream | **spawn-only**; headless (dialog tools block; `defer`+`--resume` documented not exercised — Q10, Phase 3) | spawned |
 | **OTel telemetry** | post-hoc audit only. `tool.blocked_on_user` is real but structurally useless live: span ends only at decision; measured 37.9 s emit lag. `tool_decision` log lands ~2.5 s post-answer [Q4] | 5 s+ batch | console exporters emit **nothing** — OTLP sink required [Q4]; PII in dumps (email, org id) — never commit raw exports [Q4] | spawned (env at launch) |
+| **Session sidecar** `~/.claude/sessions/<pid>.json` — **discovered 2026-08-05, in no surveyed prior art** [docs/discovery-session-sidecar.md] | vendor-emitted `status` (`idle`/`busy`/`waiting`) + `waitingFor` (`"permission prompt"`) — answers the hardest state directly | 9-18 ms after the corresponding transcript record | edge-triggered, NOT a heartbeat (timestamp stale while state persists — never watchdog on it); clean exit deletes the file, SIGKILL leaves it stale ⇒ `kill -0` liveness gate mandatory; look up by `sessionId` not PID; undocumented/unversioned; `waitingFor` vocabulary of unknown size ⇒ unknown literal must yield `conflict` | **both** — no settings write, no spawn requirement |
 | **Process/OS** | dead (proof; the only channel surviving death) | immediate on wait/EOF | existence ≠ liveness (claude-flow anti-pattern) [SYNTHESIS 1.8] | both |
 | **PTY/emulator signals** | nothing usable from Claude Code today: **no alt-screen, no BEL, no OSC 9/777** [Q8]; OSC 0 title exists but laggy + non-monotonic [Q8]; OSC 133 unavailable (excluded from terminalSequence allowlist [Q5]; silent inside TUIs anyway) | — | ruled out for v1 as state signals; title usable as display metadata only | — |
 
 **Fusion rule** (C2: never gate on a single capture; Q9 pending for measured hierarchy):
 
+0. The **session sidecar** is the preferred reading for `busy`/`idle`/`waiting:permission`
+   when present AND its PID is live — it is vendor-emitted and millisecond-fresh. It is
+   never sufficient alone: it cannot see pre-session dialogs, carries no option text, and
+   its staleness means nothing.
 1. If hooks are confirmed installed (sentinel verified per Q1), hook events are authoritative
-   for their states; screen composite corroborates.
+   for their states; screen composite corroborates. **Hooks alone cannot clear a permission
+   latch** — denial emits no hook event at all (verified live, prototype B) — so a hook-only
+   detector must fuse sidecar or screen or report `conflict`.
 2. Screen composite is the always-available floor: `busy` = regex OR hash-motion; `idle`
    requires BOTH regex-absent AND ≥3 stable captures.
 3. Process channel overrides everything for `dead`.

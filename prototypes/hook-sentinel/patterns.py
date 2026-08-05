@@ -31,8 +31,10 @@ HOOK_EVENTS = (
     "PostToolUse",        # -> busy (refinement); clears a stale permission latch
     "PermissionRequest",  # -> waiting:permission  (PASSIVE: emits no decision)
     "PermissionDenied",   # clears the permission latch fast
+    "PostToolUseFailure",  # deny/interrupt path (see PERMISSION_CLEARING note)
     "Notification",       # -> waiting:input / agent_completed, build-dependent
     "Stop",               # -> idle candidate; payload carries background_tasks
+    "StopFailure",        # turn ended abnormally (interrupt/deny) — no Stop fires
     "SessionEnd",         # NOT death (fires on /clear too — design 6.4)
     "PreCompact",         # suppress staleness watchdog
     "PostCompact",        # resume staleness watchdog
@@ -40,10 +42,26 @@ HOOK_EVENTS = (
 
 # Events whose arrival clears a waiting:permission latch (SPEC/brief: permission is
 # cleared by the next PreToolUse/PostToolUse/Stop).
-PERMISSION_CLEARING = ("PreToolUse", "PostToolUse", "Stop", "PermissionDenied",
-                       "UserPromptSubmit")
+#
+# LIVE FINDING 2026-08-05 (claude 2.1.222): answering a permission dialog with "No"
+# fires NONE of these — no PermissionDenied, no PostToolUse(Failure), no Stop, no
+# StopFailure. The turn ends (`Interrupted · What should Claude do instead?`) with
+# the hook channel silent, so a hook-only observer latches waiting:permission
+# forever. Prototype B surfaces that as a `conflict` (rule 6 self-test), never as a
+# silent wrong state — see the report's pitfall list.
+PERMISSION_CLEARING = ("PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop",
+                       "StopFailure", "PermissionDenied", "UserPromptSubmit")
 
 # Notification payload classification. Sets, not single strings (C4).
+# The structured `notification_type` field is preferred over the prose `message`
+# (observed live 2.1.222: {"message":"Claude needs your permission",
+#  "notification_type":"permission_prompt"} — the type is far less copy-volatile).
+NOTIFY_TYPE = re.compile(r'"notification_type"\s*:\s*"([a-z_]+)"')
+NOTIFY_TYPE_MAP = {
+    "permission_prompt": "permission",
+    "idle_prompt": "input",
+    "elicitation": "input",
+}
 NOTIFY_INPUT = [
     re.compile(r"waiting for your input", re.I),
     re.compile(r"needs your (?:input|permission)", re.I),
@@ -78,6 +96,9 @@ PERMISSION_DIALOG = [
 
 def classify_notification(text: str) -> str:
     """-> 'permission' | 'input' | 'other'."""
+    m = NOTIFY_TYPE.search(text)
+    if m and m.group(1) in NOTIFY_TYPE_MAP:
+        return NOTIFY_TYPE_MAP[m.group(1)]
     if any(p.search(text) for p in NOTIFY_PERMISSION):
         return "permission"
     if any(p.search(text) for p in NOTIFY_INPUT):

@@ -37,6 +37,38 @@ Hard-won traps. Read before working on this project. Each entry: trap → fix.
   Assert on machine signals (sentinel files, settings writes, log lines) with a causal
   control (remove the sentinel before the action).
 
+## Hook channel (v2.1.222, verified live by prototype B)
+
+- **Denying a permission dialog emits NO hook event at all.** Verified twice with an
+  extended 13-event set installed (incl. `PermissionDenied`, `PostToolUseFailure`,
+  `StopFailure`): after pressing "No" the tool is interrupted, the TUI returns to an empty
+  prompt, and the event log stays silent for 50 s and 145 s of observation. **A hook-only
+  observer latches `waiting:permission` forever.** Any hook-based detector MUST fuse a
+  screen or transcript channel to close this hole, and must surface the unresolved latch
+  as a conflict rather than guessing.
+- **`Notification` lags `PermissionRequest` by 5-6 s** — corroborating signal only, never
+  the primary one. It carries a structured `notification_type` (e.g. `"permission_prompt"`)
+  alongside the prose `message`: classify on the type, which is far less copy-volatile.
+- **No hook fires on SIGKILL** (C5 confirmed live) — process liveness is mandatory.
+- **PID discovery substring trap.** claude spawns `/bin/zsh -c source ~/.claude/shell-snapshots/…`
+  children whose argv contains "claude". A substring match latches a transient child; when
+  it exits, the process channel reports `dead` for a live agent. Anchor on argv[0] basename
+  and take the tmux pane's direct child.
+- **Hook-log appends must stay under PIPE_BUF to be atomic.** Cap the payload, strip
+  newlines, and use TSV framing — JSON-wrapping-JSON loses the whole event on truncation.
+
+## Session sidecar `~/.claude/sessions/<pid>.json` (see docs/discovery-session-sidecar.md)
+
+- **Edge-triggered, not a heartbeat.** `statusUpdatedAt` does not advance while a state
+  persists (24 s of a pending dialog, unchanged; a live busy session showed a 23-min-old
+  timestamp). Staleness proves nothing — never build a watchdog on it.
+- **Death handling differs by kind**: clean exit **deletes** the file; `SIGKILL` leaves it
+  with a **stale status**. Always gate reads on `kill -0 <pid>`.
+- **Look it up by `sessionId`, not PID.** When claude is launched as the tmux pane command
+  it *is* the pane process, so `pgrep -P <pane_pid>` returns nothing (this cost a probe run).
+- **Transcript JSONL does not exist until the first prompt** — a pure transcript watcher
+  cannot observe launch→first-idle at all; the sidecar covers that window.
+
 ## claude CLI flags (v2.1.222, verified live)
 
 - **`--bare` severs subscription auth.** It reads ONLY `ANTHROPIC_API_KEY`/apiKeyHelper —

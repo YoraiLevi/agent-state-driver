@@ -44,6 +44,7 @@ STALE_AFTER_S = 120     # SPEC rule 3: presumed_hung threshold (> poll interval)
 CAPTURE_TIMEOUT_S = 5   # FMA 6.4: a hanging capture is an event, not a crash
 HOOK_PAYLOAD_CAP = 1500  # keep one appended line < PIPE_BUF so appends stay atomic
 LIVENESS_GRACE_S = 25   # after first send, how long before "hooks never fired" = conflict
+PERM_LATCH_STALE_S = 10  # permission latch with no clearing event -> conflict
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07")
 
@@ -91,8 +92,8 @@ def install_hooks(workdir, events_path, tag):
         entry = {"hooks": [{"type": "command",
                             "command": hook_command(events_path, ev),
                             "timeout": 10}]}
-        if ev in ("PreToolUse", "PostToolUse", "PermissionRequest",
-                  "PermissionDenied"):
+        if ev in ("PreToolUse", "PostToolUse", "PostToolUseFailure",
+                  "PermissionRequest", "PermissionDenied"):
             entry["matcher"] = "*"
         hooks.setdefault(ev, [])
         hooks[ev] = [e for e in hooks[ev] if tag not in json.dumps(e)]
@@ -311,8 +312,10 @@ def derive_from_events(events):
         elif name == "UserPromptSubmit":
             state = "busy"
             attrs.pop("background_work", None)
-        elif name in ("PreToolUse", "PostToolUse"):
+        elif name in ("PreToolUse", "PostToolUse", "PostToolUseFailure"):
             state = "busy"
+        elif name == "StopFailure":
+            state = "idle"   # turn ended abnormally (interrupt / denied tool)
         elif name == "PermissionRequest":
             perm_latch = True
             state = "waiting:permission"
@@ -423,8 +426,15 @@ def observe(s):
             attrs["conflict"] = True
             ev_out.append({"channel": "selftest",
                            "signal": "PermissionRequest fired but no permission "
-                                     "literal matched the screen (patterns stale)",
+                                     "literal matched the screen (patterns stale "
+                                     "OR the dialog was resolved with no event)",
                            "at": now})
+            # LIVE FINDING: answering "No" emits no hook event at all, so the latch
+            # cannot be cleared from the event channel. Two channels now disagree —
+            # surface it as `conflict` (SPEC rule 2) rather than guess either way.
+            if now - last > PERM_LATCH_STALE_S:
+                attrs["reason"] = "permission_latch_unresolved_by_event_channel"
+                return {"state": "conflict", "attrs": attrs, "evidence": ev_out}
         else:
             attrs["literal_selftest"] = "ok"
     return {"state": state, "attrs": attrs, "evidence": ev_out}

@@ -12,6 +12,48 @@ Deliberately NO hooks and no settings writes — this prototype measures what th
 always-on-disk channel alone can prove, including its declared blind spots.
 
 Stdlib only, Python 3.9 floor. State per session: <workdir>/.transcript-watch/<id>/.
+
+COVERAGE DECLARATION (measured live, claude 2.1.222 / macOS, 2026-08-05).
+Enumerated below = analyzed. Anything absent = NOT analyzed, not cleared.
+
+  CAN see, from disk alone:
+    busy / idle turn boundaries  — system/turn_duration is written with no hook
+                                   configured; detection lag = poll interval.
+    tool activity + tool NAME    — assistant tool_use blocks; the transcript
+                                   names the tool, which the screen cannot.
+    permission DENIAL, after the fact — tool_result carries
+                                   toolDenialKind:"user-rejected".
+    pending permission dialog    — NOT from the transcript: from the
+                                   ~/.claude/sessions/<pid>.json sidecar
+                                   (status:"waiting", waitingFor:"permission
+                                   prompt"), written ~18 ms after the tool_use
+                                   record. Vendor-written, machine-readable.
+    compaction                   — system/compact_boundary (watchdog suppressed).
+                                   NOT exercised live in this run (INFERRED from
+                                   SYNTHESIS 1.4 schema; code path untested).
+    dead                         — process channel only (tmux + pid).
+
+  CANNOT see, from disk alone:
+    the trust dialog / theme / login pickers — no record, and the transcript
+      FILE DOES NOT EXIST until the first prompt is submitted (measured: 60 s
+      after launch, at an accepting prompt, no project dir at all). The whole
+      launch->first-idle window (scenario S1) is invisible to the transcript;
+      only the sidecar covers it, and its value DURING the trust dialog is
+      UNVERIFIED. `launch` therefore gates trust on a screen capture.
+    a pending dialog, from the transcript ALONE — during an 79.6 s live dialog
+      window the file did not grow by one byte. Transcript-only inference is
+      "unresolved tool_use + silence > PERMISSION_SUSPECT_S", which is
+      structurally ambiguous with a long-running foreground tool; it is emitted
+      with attrs {inferred:true, confidence:"low", discriminator:"none"} and is
+      superseded whenever the sidecar is readable.
+    which OPTION a dialog offers — answering requires the screen.
+    Ctrl-C interrupts / partial turns beyond what a record happens to encode.
+
+  KNOWN HAZARDS:
+    the sidecar SURVIVES SIGKILL with a stale status (verified: status stayed
+      "idle" after kill -9) — every read validates pid liveness first.
+    no published schema for either file; both are version-pinned in records.py
+      with a self-test that fails loudly on zero recognized records.
 """
 
 import argparse
@@ -37,6 +79,7 @@ STALE_AFTER_S = 120     # SPEC rule 3: presumed_hung threshold
 PERMISSION_SUSPECT_S = 8.0   # unresolved tool_use silence => suspect a dialog
 TMUX_TIMEOUT_S = 5
 TRANSCRIPT_WAIT_S = 60  # the file can appear late; poll for it
+TRUST_SETTLE_S = 8.0    # min launch window before believing an early `idle`
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07")
 TRUST_RE = re.compile(r"Quick safety check: Is this a project you created"
@@ -66,6 +109,58 @@ def transcript_path(workdir: Path, sid: str):
     if hits:
         return Path(hits[0])
     return guess  # nonexistent path; caller treats absence as `starting`
+
+
+# -- session-status sidecar ---------------------------------------------------
+# DISCOVERED LIVE 2026-08-05 (2.1.222), not in SYNTHESIS 1.4: claude writes
+#   ~/.claude/sessions/<pid>.json
+#   {"pid":..,"sessionId":..,"cwd":..,"kind":"interactive","status":"waiting",
+#    "waitingFor":"permission prompt","statusUpdatedAt":<epoch ms>, ...}
+# It is the ONLY disk signal that sees a pending permission dialog (the
+# transcript is silent for the whole dialog window — see COVERAGE). Written on
+# status CHANGE, not on a heartbeat, so its mtime is NOT a liveness signal and
+# the file SURVIVES process death — always validate the pid before trusting it.
+
+def pid_alive(pid) -> bool:
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def session_status(sid: str):
+    """-> dict or None. Only returned when its pid is still alive."""
+    root = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
+    for f in glob.glob(str(root / "sessions" / "*.json")):
+        try:
+            with open(f, encoding="utf-8") as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if d.get("sessionId") != sid:
+            continue
+        d["_file"] = f
+        d["_pid_alive"] = pid_alive(d.get("pid"))
+        return d
+    return None
+
+
+def status_to_state(st: dict):
+    """Map the sidecar's vocabulary onto SPEC states. Returns (state, attrs) or
+    None when the value is unknown (never guess — SPEC rule 2)."""
+    s = (st.get("status") or "").lower()
+    waiting_for = (st.get("waitingFor") or "")
+    if s == "waiting":
+        if "permission" in waiting_for.lower():
+            return ("waiting:permission", {"waiting_for": waiting_for})
+        return ("waiting:input", {"waiting_for": waiting_for or None,
+                                  "note": "non-permission wait"})
+    if s == "idle":
+        return ("idle", {})
+    if s in ("busy", "running", "working", "thinking"):
+        return ("busy", {})
+    return None
 
 
 # -- transcript reader --------------------------------------------------------
@@ -178,7 +273,9 @@ def derive(tail: Tail, now: float) -> dict:
 
     last = tail.recs[-1]
     last_i = len(tail.recs) - 1
-    quiet_s = now - (tail.last_growth_at or now)
+    # Quiet-time must come from the FILE (mtime), not an in-process timer:
+    # a one-shot `state` invocation has no history of its own.
+    quiet_s = now - tail.last_mtime if tail.last_mtime else 0.0
     ev.append({"channel": "transcript",
                "signal": "last_record type=%s subtype=%s" % (last["type"], last["subtype"]),
                "at": now})
@@ -316,7 +413,52 @@ def observe(s: Session, tail: Tail) -> dict:
         rep["attrs"]["records_at_death"] = len(tail.recs)
         return rep
     tail.poll()
-    return derive(tail, now)
+    rep = derive(tail, now)
+
+    # fuse the session-status sidecar (SPEC rule 2: disagreement is surfaced)
+    st = session_status(s.id)
+    if not st:
+        rep["attrs"]["session_status"] = "absent"
+        return rep
+    if not st["_pid_alive"]:
+        rep["evidence"].append({"channel": "session-status",
+                                "signal": "stale sidecar (pid %s dead) — ignored"
+                                          % st.get("pid"), "at": now})
+        return rep
+    mapped = status_to_state(st)
+    rep["evidence"].append({"channel": "session-status",
+                            "signal": "status=%s waitingFor=%s (pid %s)"
+                                      % (st.get("status"), st.get("waitingFor"),
+                                         st.get("pid")),
+                            "at": (st.get("statusUpdatedAt") or 0) / 1000.0 or now})
+    if mapped is None:
+        rep["attrs"]["unknown_status_literal"] = st.get("status")
+        rep["attrs"]["conflict"] = True     # fail loudly, never guess
+        return rep
+    state2, attrs2 = mapped
+    if state2 == rep["state"]:
+        rep["attrs"]["corroborated_by"] = "session-status"
+        return rep
+    if state2.startswith("waiting:"):
+        # vendor-written proof outranks the transcript's silence-inference
+        attrs2.update({"transcript_said": rep["state"],
+                       "source": "session-status"})
+        if rep["state"] not in ("busy", "waiting:permission", "waiting:input"):
+            attrs2["conflict"] = True
+        return {"state": state2, "attrs": attrs2, "evidence": rep["evidence"]}
+    if rep["state"] == "starting" and state2 == "idle":
+        # The transcript file is not created until the FIRST prompt, so the
+        # whole launch->first-idle window is invisible to it. The sidecar
+        # exists from process start and covers exactly that gap.
+        return {"state": "idle",
+                "attrs": {"first_idle_from": "session-status",
+                          "transcript": rep["attrs"].get("transcript"),
+                          "caveat": "sidecar value during the trust dialog is "
+                                    "UNVERIFIED; launch gates trust on screen"},
+                "evidence": rep["evidence"]}
+    rep["attrs"]["conflict"] = True
+    rep["attrs"]["session_status_said"] = state2
+    return rep
 
 
 def observe_settled(s: Session, ticks: int = STABLE_N) -> dict:
@@ -361,7 +503,8 @@ def cmd_launch(a):
 
     # SPEC rule 4 — trust dialog handled unconditionally, via SCREEN (the only
     # channel that can see it; declared as a coverage gap for this prototype).
-    deadline = time.time() + TRANSCRIPT_WAIT_S
+    t0 = time.time()
+    deadline = t0 + TRANSCRIPT_WAIT_S
     trust_answered = False
     tail = s.tail()
     rep = {"state": "starting", "attrs": {}, "evidence": []}
@@ -374,7 +517,13 @@ def cmd_launch(a):
             time.sleep(2.0)
             continue
         rep = observe(s, tail)
-        if rep["state"] in ("idle", "dead"):
+        # The sidecar reports `idle` from process start, so an early idle could
+        # fire BEFORE the trust dialog has even rendered. Require either an
+        # answered trust dialog or a minimum settle window (SPEC rule 4).
+        if rep["state"] == "dead":
+            break
+        if rep["state"] == "idle" and (trust_answered
+                                       or time.time() > t0 + TRUST_SETTLE_S):
             break
         time.sleep(POLL_S)
     out = {"id": sid, "state": rep["state"], "trust_dialog_answered": trust_answered,

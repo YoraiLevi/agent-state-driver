@@ -31,8 +31,15 @@ BACKGROUND_WORK = re.compile(r"\d+\s+shell(?:s)?\s+still\s+running")
 # --- dialog literal sets (waiting states) --------------------------------------
 # Sets, not single strings (C4). Each entry: (regex, dialog_kind).
 PERMISSION_DIALOG = [
-    re.compile(r"No, and tell Claude what to do differently"),
+    # 2.1.222 Bash-command dialog, verified live. NOTE (found by prototype B,
+    # 2026-08-05): of the four literals originally taken from prior art, ONLY
+    # "Do you want to proceed" actually matched this build. The rest are kept as
+    # set members for other dialog kinds / older builds — this is exactly the
+    # C4 failure class (unversioned vendor copy) the set design exists for.
     re.compile(r"Do you want to (?:make this edit|proceed)"),
+    re.compile(r"Yes, and always allow access to .* from this project"),
+    # other builds / dialog kinds (unverified on 2.1.222):
+    re.compile(r"No, and tell Claude what to do differently"),
     re.compile(r"Yes, allow all .* this session"),
     re.compile(r"Yes, and (?:don't|do not) ask again"),
 ]
