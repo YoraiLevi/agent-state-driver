@@ -4,8 +4,15 @@ Ground truth of the project. Updated every session that moves state.
 
 ## Current phase
 
-Phase 0 (infrastructure) — in progress. Phases: 0 infra · 1 prior-art research ·
-2 functional design + FMA · 3 prototypes · 4 cross-platform proof · 5 docs + publication.
+Phase 2 (functional design + FMA) — in progress: empirical-probe workflow (Q1 hook-retrofit,
+Q4 telemetry, Q5 hooks-doc, Q6 detection-matrix, Q7 false-idle, Q8 altscreen/BEL) running;
+design doc will be written on its results. Phases: 0 infra ✅ · 1 prior-art research ✅ ·
+2 design + FMA 🔄 · 3 prototypes · 4 cross-platform proof · 5 docs + publication.
+
+Phase 1 results: docs/.research/prior-art/ — 7 researcher files + SYNTHESIS.md (9-channel
+taxonomy, 14-project comparison, conclusions C1-C11, open questions Q1-Q11). Q11 settled
+first-hand: transcript layout is flat session JSONLs + per-session subagents/ sidecar trees,
+on BOTH macOS and Windows (this machine's ~/.claude/projects contains windesk project dirs).
 
 ## Decisions locked
 
