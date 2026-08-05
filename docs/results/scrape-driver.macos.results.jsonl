@@ -1,0 +1,7 @@
+{"scenario": "S1", "event": "first_idle", "ok": true, "t_truth": 1785953038.614909, "t_detect": 1785953046.821193, "delta_s": 8.2, "state": "idle", "at": 1785953046.821203}
+{"scenario": "S2", "event": "busy_report", "state": "busy", "expected": "busy", "ok": true, "at": 1785953056.353357}
+{"scenario": "S2", "event": "turn_complete", "ok": true, "truth_pong_on_screen": true, "t_truth": 1785953046.825045, "t_detect": 1785953058.4419541, "delta_s": 11.6, "at": 1785953058.446677}
+{"scenario": "S4", "event": "send", "ok": true, "detail": {"sent": true, "verified_on_screen": true}, "at": 1785953063.888075}
+{"scenario": "S4", "event": "perm_detected", "ok": true, "truth_dialog": true, "state": "waiting:permission", "t_detect": 1785953065.955998, "screen": null, "at": 1785953065.965528}
+{"scenario": "S4", "event": "deny_verified", "ok": true, "file_absent": true, "at": 1785953069.54946}
+{"scenario": "S6", "event": "dead_detected", "ok": true, "state": "dead", "t_truth": 1785953073.9358249, "t_detect": 1785953073.977243, "delta_s": 0.0, "at": 1785953073.977249}
