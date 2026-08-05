@@ -19,6 +19,20 @@ never guesses.
 
 Stdlib only, Python 3.9 floor (no PEP 604 unions). State per session lives under
 <workdir>/.hook-sentinel/<id>/.
+
+COVERAGE DECLARATION
+  Verified live (claude 2.1.222, macOS): starting (trust dialog), idle (SessionStart and
+  Stop paths), busy (UserPromptSubmit and PreToolUse paths), waiting:permission
+  (PermissionRequest), dead (SIGKILL via process channel, 27 ms), conflict (permission
+  latch unresolved by the event channel), and send-refusal outside idle.
+  Verified by offline selftest.py only (NOT live): presumed_hung, the 90 s idle
+  no-false-busy property, compaction suppression + re-arm, idle.background_work,
+  waiting:input, and the hooks-never-fired conflict path.
+  NOT verified at all: a real AskUserQuestion/Elicitation dialog, a real compaction,
+  --safe-mode, cold attach to a session this driver did not launch, Linux, Windows.
+  KNOWN LIMIT (structural, verified twice): denying a permission dialog emits NO hook
+  event, so this channel alone can never clear the latch. It reports `conflict` rather
+  than guessing; a production fusion layer needs the sidecar or the screen to close it.
 """
 
 import argparse

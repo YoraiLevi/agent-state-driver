@@ -4,8 +4,12 @@ Ground truth of the project. Updated every session that moves state.
 
 ## Current phase
 
-Phase 4 (cross-platform proof) — in progress. Phases: 0 infra ✅ · 1 prior-art ✅ ·
-2 design + FMA ✅ · 3 prototypes + harness ✅ · 4 cross-platform 🔄 · 5 docs + publication.
+Phase 5 (docs + publication) — in progress. Phases: 0 infra ✅ · 1 prior-art ✅ ·
+2 design + FMA ✅ · 3 prototypes + harness ✅ · 4 cross-platform ✅ · 5 docs 🔄.
+
+An adversarial review of the repo's own claims was run and its findings applied
+(README overclaims corrected, missing evidence records committed, the portability check
+rewired to exercise the shipped detector). See git log 2026-08-05.
 
 Phase 3 results (docs/results/RACE-macos.md): four prototypes — A scrape, B hooks,
 C transcript+sidecar, D fused — raced under an independent referee. C 7/7, A/B/D 6/7;
@@ -13,8 +17,10 @@ B's only failure is the real permission latch (denial emits no hook event).
 
 Phase 4 so far (docs/results/PORTABILITY.md): mock-agent fixture + portability check
 pass 15/15 on macOS (tmux 3.7b, py3.9.6) AND Debian/podman (tmux 3.3a, py3.11.2).
-Windows leg delegated and in progress. Real-claude-on-Linux declared UNVERIFIED
-(devbox blocked on owner's Tailscale approval; credentials-into-container rejected).
+Windows leg COMPLETE — interactive claude.exe hosted via node-pty (ConPTY) +
+@xterm/headless, all four channels verified live; the sidecar is schema-identical to macOS
+apart from procStart (FILETIME). Real-claude-on-Linux remains UNVERIFIED (devbox blocked on
+owner's Tailscale approval; credentials-into-container rejected as a workaround).
 
 Phase 1 results: docs/.research/prior-art/ — 7 researcher files + SYNTHESIS.md (9-channel
 taxonomy, 14-project comparison, conclusions C1-C11, open questions Q1-Q11). Q11 settled
@@ -51,5 +57,6 @@ on BOTH macOS and Windows (this machine's ~/.claude/projects contains windesk pr
 
 ## Next
 
-- Phase 1 research workflow (parallel subagents): cultureagent deep-read, broad prior-art sweep,
-  hooks inventory, gist digestion, synthesis into detection-channel taxonomy.
+- Finish Phase 5: close issue #5, final read-through of every doc for claim/evidence match.
+- Blocked on owner: Tailscale SSH approval for devbox, to verify real-claude-on-Linux.
+- Unbuilt and declared: an `attach` verb (attached posture), HTTP hooks, stream-json mode.

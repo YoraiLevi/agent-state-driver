@@ -15,6 +15,14 @@ Why fusion rather than the best single channel — each has a hole the others co
 Disagreement is reported, never silently resolved (SPEC rule 8).
 
 Stdlib only, Python 3.9+.
+
+COVERAGE DECLARATION
+  Verified live (claude 2.1.222, macOS): starting, idle, busy, waiting:permission
+  (+ causal denial), dead, and `conflict` — emitted live as sidecar=idle vs screen=busy
+  (record: docs/results/conflict/).
+  NOT verified: waiting:input against a real question dialog, presumed_hung live,
+  compaction suppression, an unrecognised sidecar literal (the conflict path for it is
+  written but never exercised), attached posture (no `attach` verb), Windows.
 """
 
 import argparse

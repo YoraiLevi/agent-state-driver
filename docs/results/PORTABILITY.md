@@ -6,8 +6,9 @@ The portability check drives `prototypes/mockagent/mock_claude.py` — a determi
 stand-in that replays the exact rendered shapes recorded from live 2.1.222 sessions —
 and asserts each detector signal reads correctly.
 
-**Proves:** the drivers' parsing, fusion, timing and process handling are portable —
-same results across OS, tmux version, and Python version.
+**Proves:** the shipped detector (`patterns.classify_screen`, imported directly by the
+check — sabotaging it fails the run) and the sidecar lifecycle behave identically across
+OS, tmux version, and Python version.
 **Does not prove:** real-CLI behavior on the target OS. Real-claude-on-**Linux** is declared
 UNVERIFIED (blocked: devbox requires a Tailscale SSH browser approval only the owner can
 grant; putting the owner's OAuth credentials into a container was rejected as a way around it).
@@ -20,8 +21,8 @@ not need the mock.
 
 | Platform | tmux | Python | Result |
 |---|---|---|---|
-| macOS 25.5.0 (arm64) | 3.7b | 3.9.6 | **15/15** |
-| Debian bookworm (podman, arm64) | 3.3a | 3.11.2 | **15/15** |
+| macOS 25.5.0 (arm64) | 3.7b | 3.9.6 | **16/16** |
+| Debian bookworm (podman, arm64) | 3.3a | 3.11.2 | **16/16** (re-run after the detector was wired in) |
 | Windows 11 build 26200 | n/a (node ConPTY host) | node 26.3.0 | **all 4 channels verified live** — see `docs/.research/empirical/windows-leg.md` |
 
 Signals verified identically on both: trust dialog copy, idle prompt, busy spinner shape,

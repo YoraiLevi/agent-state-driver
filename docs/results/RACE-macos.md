@@ -29,6 +29,13 @@ window closed before the driver could be asked. Inconclusive is never a pass.
 Measured incidentally and repeatedly: **terminal death → process death = 0.81-1.31 s**.
 That gap is the silent-misdetection window that scenario S6b exists to police.
 
+## n=1, and one visible counter-example
+
+Every cell is a single run. `scrape-driver.macos.results.jsonl` in this directory is an
+EARLIER A run that scored 7/7 (its S4 permission detect was 2.07 s, where the table below
+says 3.1 s). The table reports the later run, which is the one all four prototypes were
+raced in on equal terms. Treat every latency here as one observation, not a benchmark.
+
 ## Read as
 
 - **No single channel wins.** B is fastest on turn boundaries (hook dispatch ~0.1 s) but

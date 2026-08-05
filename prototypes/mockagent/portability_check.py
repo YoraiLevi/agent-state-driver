@@ -7,7 +7,7 @@ narrow and stated: prove the driver's PARSING, FUSION, TIMING and PROCESS
 handling behave identically across OSes. It does NOT prove real-CLI behavior on
 the target OS — see mock_claude.py's docstring.
 
-Usage: python3 portability_check.py [--driver PATH ...]
+Usage: python3 portability_check.py
 Exit 0 = all checks passed.
 """
 
@@ -22,6 +22,15 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 MOCK = HERE / "mock_claude.py"
+
+# Exercise the SHIPPED detector, not a copy of it.
+# An earlier version of this check reimplemented the busy predicate inline, so
+# patterns.py could have been deleted and the check would still have printed
+# 15/15 — while three documents claimed it proved the drivers portable. An
+# adversarial review caught that (2026-08-05). The import below is what makes
+# the claim true: a regression in patterns.py now fails this check.
+sys.path.insert(0, str(HERE.parent / "scrape-driver"))
+from patterns import classify_screen, tail_region  # noqa: E402
 
 
 def sh(*args, timeout=30):
@@ -62,17 +71,22 @@ def run_mock_checks(results):
     about a real session is suspect on this platform."""
     sock = "mockchk-" + uuid.uuid4().hex[:6]
     sid = str(uuid.uuid4())
-    sessions = Path.home() / ".claude" / "sessions"
     workdir = Path(os.environ.get("TMPDIR", "/tmp")) / ("mockchk-" + uuid.uuid4().hex[:6])
     workdir.mkdir(parents=True, exist_ok=True)
+    # Sidecars go in a THROWAWAY dir, never the user's real ~/.claude/sessions.
+    # An interrupted run would otherwise leave a synthetic kind:"interactive"
+    # file in the directory a real orchestrator polls (found by review).
+    sessions = workdir / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
     cmd = "%s %s --session-id %s --sessions-dir %s" % (
         sys.executable, MOCK, sid, sessions)
     tmux(sock, "new-session", "-d", "-s", "m", "-x", "200", "-y", "50",
          "-c", str(workdir), cmd)
     try:
         time.sleep(2)
-        scr = capture(sock, "m")
-        check("renders trust dialog", "Yes, I trust this folder" in scr, True, results)
+        cap = capture(sock, "m")
+        check("detector: trust_dialog", classify_screen(cap)["trust_dialog"], True,
+              results)
 
         def sidecar():
             for f in sessions.glob("*.json"):
@@ -87,7 +101,8 @@ def run_mock_checks(results):
         check("sidecar exists at startup", bool(sidecar()), True, results)
         tmux(sock, "send-keys", "-t", "m", "Enter")
         time.sleep(2)
-        check("idle prompt after trust", "❯" in capture(sock, "m"), True, results)
+        check("detector: prompt_mark", classify_screen(capture(sock, "m"))["prompt_mark"],
+              True, results)
         check("sidecar idle", sidecar().get("status"), "idle", results)
 
         # statusline wall-clock must move while IDLE — the false-busy source.
@@ -99,23 +114,25 @@ def run_mock_checks(results):
         tmux(sock, "send-keys", "-t", "m", "-l", "say hello")
         tmux(sock, "send-keys", "-t", "m", "Enter")
         time.sleep(1.5)
-        scr = capture(sock, "m")
-        import re
-        busy_re = re.compile(r"[^\w\s]\s+\S+…\s*\(\d+s")
-        check("busy spinner shape matches", bool(busy_re.search(scr)), True, results)
+        sig = classify_screen(capture(sock, "m"))   # THE SHIPPED DETECTOR
+        check("detector: spinner_busy", sig["spinner_busy"], True, results)
         check("sidecar busy", sidecar().get("status"), "busy", results)
         time.sleep(5)
-        scr = tail(capture(sock, "m"))
-        check("completion form present", "Cogitated for" in scr, True, results)
-        check("completion is NOT busy-shaped", bool(busy_re.search(scr)), False, results)
+        cap = capture(sock, "m")
+        sig = classify_screen(cap)
+        check("completion form present", "Cogitated for" in tail_region(cap), True,
+              results)
+        # the glyph trap: past-tense completion must NOT read as busy
+        check("detector: completion not busy", sig["spinner_busy"], False, results)
+        check("detector: completion_line seen", sig["completion_line"], True, results)
         check("sidecar back to idle", sidecar().get("status"), "idle", results)
 
         tmux(sock, "send-keys", "-t", "m", "-l", "touch probe.txt")
         tmux(sock, "send-keys", "-t", "m", "Enter")
         time.sleep(2)
-        scr = capture(sock, "m")
-        check("permission dialog rendered", "Do you want to proceed?" in scr, True,
-              results)
+        cap = capture(sock, "m")
+        sig = classify_screen(cap)
+        check("detector: permission_dialog", sig["permission_dialog"], True, results)
         check("sidecar waiting", sidecar().get("status"), "waiting", results)
         check("sidecar waitingFor", sidecar().get("waitingFor"), "permission prompt",
               results)

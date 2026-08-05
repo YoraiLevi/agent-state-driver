@@ -87,7 +87,7 @@ Hard-won traps. Read before working on this project. Each entry: trap → fix.
 
 - **Terminal-gone is NOT agent-dead.** `tmux has-session` returning false means the
   terminal died; the claude process outlives it by ~1 s (SIGHUP propagation) and
-  indefinitely if detached or wedged. Two of three prototypes shipped this defect and
+  indefinitely if detached or wedged. Two of the four prototypes shipped this defect and
   reported `dead` with the process provably alive (verified: pid alive before AND after
   the claim). Gate liveness on the agent PID.
 - **Cache the PID at launch.** The sidecar that names it is deleted on clean shutdown, so

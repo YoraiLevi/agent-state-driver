@@ -7,6 +7,16 @@ Deliberately NO hooks, NO transcript — this prototype measures how far the
 always-available floor gets us (design section 3, fusion rule 2).
 
 Stdlib only. State per session lives under <workdir>/.scrape-driver/<id>/.
+
+COVERAGE DECLARATION
+  Verified live (claude 2.1.222, macOS): starting (incl. unconditional trust dialog),
+  idle, busy, waiting:permission (+ denial verified causally by file absence), dead.
+  Verified by fixture (macOS + Linux): the screen predicates via patterns.classify_screen.
+  NOT verified: waiting:input against a real question dialog, presumed_hung live,
+  compaction, attached posture (no `attach` verb exists), Windows (this backend is tmux).
+  KNOWN LIMIT: single-channel, so motion-without-busy-regex is treated as busy and a
+  statusline wall-clock produces a false-busy this prototype cannot resolve. Declared,
+  not hidden — the fused prototype defers to the sidecar instead.
 """
 
 import argparse

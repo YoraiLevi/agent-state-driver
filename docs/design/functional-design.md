@@ -2,8 +2,10 @@
 
 Status: settled draft v1 (2026-08-05). Grounded in `docs/.research/prior-art/SYNTHESIS.md`
 (conclusions cited as C1-C11) and the empirical probes in `docs/.research/empirical/`
-(cited as Q1-Q8). Every load-bearing claim carries its source; unverified claims are
-marked (INFERRED) or (UNVERIFIED).
+(cited as Q1-Q11; Q1/Q4-Q8 have files in docs/.research/empirical/, Q2/Q3/Q9/Q10 were
+answered by the Phase 3-4 results in docs/results/ and the Windows leg, and Q11 was settled
+by direct inspection recorded in STATE.md). Every load-bearing claim carries its source;
+unverified claims are marked (INFERRED) or (UNVERIFIED).
 
 ## 1. Problem and scope
 
@@ -89,7 +91,7 @@ Reliability table, empirically grounded. "Proof" = state is certain when signal 
 | **HTTP hooks** | same events as command hooks, pushed as per-event stateless POST | ms + RTT | fail-open (non-2xx/timeout ignored); not on `SessionStart`/`Setup`; gated by `allowedHttpHookUrls` [Q5] | both |
 | **Transcript JSONL** | turn boundaries + wall-clock (`turn_duration`), hook-ran proof (`stop_hook_summary`), compaction, permission-mode; subagent fan-out via `subagents/` sidecar tree (both OSes, Q11-settled) | FS-watch-bound | undocumented schema, version-fragile [SYNTHESIS 1.4]; forks need `sessionId`/`forkedFrom` tracking | both |
 | **stream-json** (`-p --include-hook-events --include-partial-messages`) | richest: token-level busy, api_retry, hook lifecycle inline | stream | **spawn-only**; headless (dialog tools block; `defer`+`--resume` documented not exercised — Q10, Phase 3) | spawned |
-| **OTel telemetry** | post-hoc audit only. `tool.blocked_on_user` is real but structurally useless live: span ends only at decision; measured 37.9 s emit lag. `tool_decision` log lands ~2.5 s post-answer [Q4] | 5 s+ batch | console exporters emit **nothing** — OTLP sink required [Q4]; PII in dumps (email, org id) — never commit raw exports [Q4] | spawned (env at launch) |
+| **OTel telemetry** | post-hoc audit only. `tool.blocked_on_user` is real but structurally useless live: span ends only at decision, so observation lag is UNBOUNDED (measured 37.9 s for a 32.9 s block; export itself was 5.0 s). `tool_decision` log lands ~2.5 s post-answer [Q4] | 5 s+ batch | console exporters emit **nothing** — OTLP sink required [Q4]; PII in dumps (email, org id) — never commit raw exports [Q4] | spawned (env at launch) |
 | **Session sidecar** `~/.claude/sessions/<pid>.json` — **discovered 2026-08-05, in no surveyed prior art** [docs/discovery-session-sidecar.md] | vendor-emitted `status` (`idle`/`busy`/`waiting`) + `waitingFor` (`"permission prompt"`) — answers the hardest state directly | 9-18 ms after the corresponding transcript record | edge-triggered, NOT a heartbeat (timestamp stale while state persists — never watchdog on it); clean exit deletes the file, SIGKILL leaves it stale ⇒ `kill -0` liveness gate mandatory; look up by `sessionId` not PID; undocumented/unversioned; `waitingFor` vocabulary of unknown size ⇒ unknown literal must yield `conflict` | **both** — no settings write, no spawn requirement |
 | **Process/OS** | dead (proof; the only channel surviving death) | immediate on wait/EOF | existence ≠ liveness (claude-flow anti-pattern) [SYNTHESIS 1.8] | both |
 | **PTY/emulator signals** | nothing usable from Claude Code today: **no alt-screen, no BEL, no OSC 9/777** [Q8]; OSC 0 title exists but laggy + non-monotonic [Q8]; OSC 133 unavailable (excluded from terminalSequence allowlist [Q5]; silent inside TUIs anyway) | — | ruled out for v1 as state signals; title usable as display metadata only | — |
@@ -224,7 +226,13 @@ Coverage: enumerated below = analyzed; anything not listed = not yet analyzed (n
 - Multi-byte chars split across stream reads → permanent U+FFFD under `from_utf8_lossy`
   [C10]; byte-typed wires required if we ever proxy streams.
 
-## 7. Prototype plan (Phase 3) and what each must answer
+## 7. Prototype plan (Phase 3, AS WRITTEN BEFORE BUILDING)
+
+> Kept as the historical plan. What was actually built diverged: a fourth prototype
+> (D `fused`) was added; C's decisive channel turned out to be the **sidecar**, not the
+> transcript (it scores 7/7 *because* of the sidecar); and B implements neither HTTP hooks
+> nor the `defer`/`--resume` flow — both remain unbuilt and are listed as not-verified in
+> the README. For what exists and how it scored, see docs/results/RACE-macos.md.
 
 | Prototype | Channels | Answers | Success oracle |
 |---|---|---|---|
@@ -237,10 +245,13 @@ Coverage: enumerated below = analyzed; anything not listed = not yet analyzed (n
 
 Locked (relitigable only with new evidence): composite busy gate [Q7+reconciliation];
 detect-don't-bypass permissions default [C9 resolved]; observer-side staleness [C5]; two-tier
-death [C5]; no binary patching [C10]; evidence-carrying `state` API; Windows backend decision
-deferred to Phase 4 empirical results [Q2].
+death [C5]; no binary patching [C10]; evidence-carrying `state` API; **Windows backend =
+node ConPTY host** [Q2, resolved by the Windows leg]; **per-channel latency hierarchy**
+[Q9, answered by docs/results/RACE-macos.md]; liveness gated on the agent PID, not the
+terminal [S6b]; screen matching anchored to the visible pane, never scrollback [fixture].
 
-Open (Phase 3/4 will answer): Q2 (headless ConPTY daemon verbs), Q3 (stream-json cross-OS
-parity), Q9 (per-channel latency race), Q10 (defer + `--resume` permission flow), compaction
-duration distribution (watchdog threshold), which config factor suppresses the footer hint
-(reconciliation residual), Linux/Windows rendering of spinner/dialog literals.
+Open: Q3 (stream-json cross-OS parity — never measured), Q10 (defer + `--resume` permission
+flow — documented, never exercised), compaction duration distribution (watchdog threshold),
+which config factor suppresses the footer hint (reconciliation residual), the `waitingFor`
+vocabulary beyond "permission prompt", attached-posture driving (mechanism proven, no
+`attach` verb implemented), Windows persistence across logoff/Session 0.
