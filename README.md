@@ -56,10 +56,14 @@ This is the single strongest argument for fusing channels rather than picking th
 
 | Prototype | Channels | Score | Strength | Fatal gap |
 |---|---|---|---|---|
-| A `scrape-driver` | screen + process | 6/7 | needs zero vendor cooperation | version-volatile UI copy; unresolvable false-busy |
-| B `hook-sentinel` | hooks + process | 6/7 | fastest turn boundaries (send→complete 3.4 s) | cannot clear the permission latch |
-| C `transcript-watch` | transcript + sidecar + process | **7/7** | durable, no settings write | blind before the first prompt |
-| D `fused` | sidecar + screen + process | 6/7 | reports conflicts instead of guessing | inherits screen's poll latency |
+| A `scrape-driver` | screen + process | 6/6 (+1 inconclusive) | needs zero vendor cooperation | version-volatile UI copy; unresolvable false-busy |
+| B `hook-sentinel` | hooks + process | **6/7 — one real failure** | fastest turn boundaries (send→complete 3.4 s) | cannot clear the permission latch |
+| C `transcript-watch` | transcript + sidecar + process | 7/7 | durable, no settings write | blind before the first prompt |
+| D `fused` | sidecar + screen + process | 6/6 (+1 inconclusive) | reports conflicts instead of guessing | inherits screen's poll latency |
+
+Scores count only *decided* checks; an inconclusive run (the referee could not establish
+ground truth in time) is never counted as a pass. Only B has a genuine failure, and it is
+the permission latch above — correct behavior, correctly scored as a failure.
 
 → [docs/results/RACE-macos.md](docs/results/RACE-macos.md)
 
