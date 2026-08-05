@@ -60,12 +60,69 @@ class Session:
             return None
         return ANSI_RE.sub("", r.stdout)
 
-    def alive(self) -> bool:
+    def agent_pid(self):
+        """claude's PID.
+
+        Resolved from the vendor session sidecar (keyed by sessionId, not by PID
+        — docs/discovery-session-sidecar.md) and then CACHED to disk, because the
+        sidecar is DELETED on clean shutdown. Without the cache, liveness lookup
+        fails exactly when it matters — at death — and the driver silently falls
+        back to the terminal proxy it is trying to avoid (harness S6b, 2026-08-05).
+        """
+        cache = self.dir / "agent_pid"
+        if cache.exists():
+            try:
+                return int(cache.read_text().strip())
+            except ValueError:
+                pass
+        d = Path.home() / ".claude" / "sessions"
+        if not d.is_dir():
+            return None
+        for f in d.glob("*.json"):
+            try:
+                if json.loads(f.read_text()).get("sessionId") == self.id:
+                    pid = int(f.stem)
+                    self.dir.mkdir(parents=True, exist_ok=True)
+                    cache.write_text(str(pid))
+                    return pid
+            except (ValueError, OSError):
+                continue
+        return None
+
+    def pid_alive(self):
+        """True/False if we know the pid, None if we don't."""
+        pid = self.agent_pid()
+        if pid is None:
+            return None
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+
+    def terminal_alive(self) -> bool:
         try:
             r = self.tmux("has-session", "-t", self.id[:8])
             return r.returncode == 0
         except subprocess.TimeoutExpired:
             return False
+
+    def alive(self) -> bool:
+        """Liveness = the AGENT PROCESS, not its terminal.
+
+        Measured 2026-08-05: the claude process outlives its killed terminal by
+        ~1 s (SIGHUP propagation), and a detached agent can outlive it
+        indefinitely. Gating on `has-session` alone made this driver report
+        `dead` while the process was provably alive — a silent misdetection
+        caught by harness scenario S6b. Terminal-gone is now only a fallback for
+        when no sidecar exists to name the pid.
+        """
+        p = self.pid_alive()
+        if p is not None:
+            return p
+        return self.terminal_alive()
 
     # -- persistence ---------------------------------------------------------
     def save(self, meta: dict):
@@ -175,8 +232,14 @@ def cmd_launch(a):
     if r.returncode != 0:
         die(f"tmux launch failed: {r.stderr.strip()}", 5)
     s.save({"id": sid, "workdir": str(workdir), "created": time.time(),
-            "compat": COMPAT_RANGE})
+            "compat": COMPAT_RANGE, "socket": s.sock})
     s.touch_evidence()
+    # Resolve+cache the agent PID while the sidecar still exists (it is removed
+    # on shutdown). Poll briefly: the sidecar appears shortly after exec.
+    for _ in range(20):
+        if s.agent_pid() is not None:
+            break
+        time.sleep(0.5)
     # starting-phase handling (SPEC rule 4): wait for trust dialog or idle
     deadline = time.time() + 60
     hist: list = []

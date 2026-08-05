@@ -17,6 +17,8 @@ Python 3.9+, stdlib only. Each (driver, scenario) runs in a fresh workdir.
 
 import argparse
 import json
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -60,16 +62,39 @@ class Truth:
             return None
 
 
+def _socket_dir():
+    # tmux default socket dir: $TMUX_TMPDIR or /tmp, subdir tmux-<uid>
+    base = os.environ.get("TMUX_TMPDIR") or "/tmp"
+    return Path(base) / f"tmux-{os.getuid()}"
+
+
 def discover_session(workdir):
-    """Find the driver's session id + tmux socket from its state dir (any prototype)."""
-    for meta in Path(workdir).glob(".*/*/meta.json"):
+    """Find the driver's session id + tmux socket from its state dir.
+
+    Prototype-agnostic by construction: a driver MAY record its socket in
+    meta.json, otherwise we enumerate every socket in the tmux socket dir and
+    ask which one owns the session. Hardcoding prefixes silently misjudged
+    prototypes using an unlisted prefix (found 2026-08-05: C uses 'tw-').
+    """
+    for meta in sorted(Path(workdir).glob(".*/*/meta.json")):
         m = json.loads(meta.read_text())
         sid = m["id"]
-        for prefix in ("scrape-", "hook-", "transcript-"):
-            sock = f"{prefix}{sid[:8]}"
-            probe = subprocess.run(["tmux", "-L", sock, "-f", "/dev/null",
-                                    "has-session", "-t", sid[:8]],
-                                   capture_output=True, timeout=5)
+        target = sid[:8]
+        candidates = []
+        if m.get("socket"):
+            candidates.append(m["socket"])
+        sd = _socket_dir()
+        if sd.is_dir():
+            # newest first: the live one is usually the most recent
+            candidates += [p.name for p in
+                           sorted(sd.iterdir(), key=lambda p: -p.stat().st_mtime)]
+        for sock in candidates:
+            try:
+                probe = subprocess.run(["tmux", "-L", sock, "-f", "/dev/null",
+                                        "has-session", "-t", target],
+                                       capture_output=True, timeout=5)
+            except subprocess.TimeoutExpired:
+                continue
             if probe.returncode == 0:
                 return sid, sock
         return sid, m.get("socket")
@@ -168,21 +193,117 @@ def s4_permission_deny(driver, workdir, sid, results):
            file_absent=denied)
 
 
+def agent_pid(sid):
+    """The claude PID for a session, via the vendor session sidecar
+    (docs/discovery-session-sidecar.md). None if no sidecar exists."""
+    d = Path.home() / ".claude" / "sessions"
+    if not d.is_dir():
+        return None
+    for f in d.glob("*.json"):
+        try:
+            if json.loads(f.read_text()).get("sessionId") == sid:
+                return int(f.stem)
+        except (ValueError, OSError):
+            continue
+    return None
+
+
+def pid_alive(pid):
+    if pid is None:
+        return None
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
 def s6_kill_dead(driver, workdir, sid, results):
     jrun(driver, workdir, "send", "--id", sid,
          "--text", "Count from 1 to 100, one number per line.", "--force")
     time.sleep(3)
     _, sock = discover_session(workdir)
+    pid = agent_pid(sid)
     t_kill = time.time()
     if sock:
         subprocess.run(["tmux", "-L", sock, "-f", "/dev/null", "kill-server"],
                        capture_output=True, timeout=10)
+
+    # GROUND TRUTH IS PROCESS DEATH, NOT THE KILL COMMAND RETURNING.
+    # Measured 2026-08-05: the claude process outlives its terminal by ~1 s
+    # (SIGHUP propagation). Scoring against t_kill made a *correct* driver look
+    # wrong and rewarded one that reports "terminal gone" as "agent dead" — a
+    # proxy that is outright false for a detached-but-live agent.
+    t_truth = None
+    if pid is not None:
+        while time.time() - t_kill < 15:
+            if pid_alive(pid) is False:
+                t_truth = time.time()
+                break
+            time.sleep(0.05)
+    if t_truth is None:
+        t_truth = t_kill  # no sidecar: fall back, and say so in the record
+
     rep, _ = jrun(driver, workdir, "state", "--id", sid)
     t_detect = time.time()
     record(results, scenario="S6", event="dead_detected",
            ok=rep.get("state") == "dead", state=rep.get("state"),
-           t_truth=t_kill, t_detect=t_detect,
-           delta_s=round(t_detect - t_kill, 1))
+           pid=pid, truth_source="pid_exit" if pid else "kill_return",
+           t_truth=t_truth, t_detect=t_detect,
+           term_to_proc_death_s=round(t_truth - t_kill, 2),
+           delta_s=round(t_detect - t_truth, 2))
+
+
+def s6b_premature_death(driver, workdir, sid, results):
+    """Silent-misdetection probe: kill the terminal, then ask the driver for
+    state IMMEDIATELY, while the agent process is provably still alive.
+    A driver that answers 'dead' here is reporting a proxy as proof."""
+    pid = agent_pid(sid)
+    _, sock = discover_session(workdir)
+    if pid is None or sock is None:
+        record(results, scenario="S6b", event="skipped", ok=None,
+               reason="no sidecar/socket")
+        return
+    # Make the window DETERMINISTIC instead of racing a ~1 s SIGHUP.
+    # SIGSTOP the agent first: a stopped process cannot act on the terminal's
+    # death, so it stays provably alive while its terminal is gone. This is not
+    # an artificial case — it is exactly the shape of a detached or wedged agent,
+    # which is the state a terminal-only liveness check misreports as `dead`.
+    # (Two consecutive runs came back INCONCLUSIVE without this; a test that
+    # cannot fail the defect it targets is not evidence.)
+    os.kill(pid, signal.SIGSTOP)
+    try:
+        subprocess.run(["tmux", "-L", sock, "-f", "/dev/null", "kill-server"],
+                       capture_output=True, timeout=10)
+        alive_before = pid_alive(pid)
+        rep, _ = jrun(driver, workdir, "state", "--id", sid)
+        alive_after = pid_alive(pid)
+    finally:
+        # never leak a stopped process
+        try:
+            os.kill(pid, signal.SIGCONT)
+            time.sleep(0.5)
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    claimed_dead = rep.get("state") == "dead"
+    if alive_before is not True:
+        record(results, scenario="S6b", event="premature_death_claim", ok=None,
+               inconclusive="process already dead before driver was asked",
+               state=rep.get("state"))
+        return
+    if claimed_dead and alive_after is False:
+        record(results, scenario="S6b", event="premature_death_claim", ok=None,
+               inconclusive="process died during the driver call; window closed",
+               state=rep.get("state"))
+        return
+    premature = claimed_dead and alive_after is True
+    record(results, scenario="S6b", event="premature_death_claim",
+           ok=not premature, premature=premature,
+           pid_alive_before=alive_before, pid_alive_after=alive_after,
+           state=rep.get("state"))
 
 
 def s7_idle_no_false_busy(driver, workdir, sid, results, hold_s=60):
@@ -198,7 +319,8 @@ def s7_idle_no_false_busy(driver, workdir, sid, results, hold_s=60):
 
 
 SCENARIOS = {"S1": None, "S2": s2_trivial_turn, "S4": s4_permission_deny,
-             "S6": s6_kill_dead, "S7": s7_idle_no_false_busy}
+             "S6": s6_kill_dead, "S6b": s6b_premature_death,
+             "S7": s7_idle_no_false_busy}
 
 
 def run_driver(driver: Path, scenarios, outdir: Path):
@@ -210,7 +332,10 @@ def run_driver(driver: Path, scenarios, outdir: Path):
     sid = s1_launch_to_idle(driver, workdir, results)
     if sid:
         # S7 before destructive scenarios; S6 always last
-        order = [s for s in ["S2", "S4", "S7", "S6"] if s in scenarios]
+        # S6b and S6 are both terminal-destructive; S6b must run alone (it kills
+        # the terminal to probe the premature-death claim). Prefer S6b when both
+        # are requested only if S6 is absent.
+        order = [s for s in ["S2", "S4", "S7", "S6b", "S6"] if s in scenarios]
         for s in order:
             try:
                 SCENARIOS[s](driver, workdir, sid, results)

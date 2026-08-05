@@ -378,7 +378,42 @@ class Session:
             return None
         return ANSI_RE.sub("", r.stdout) if r.returncode == 0 else None
 
+    def agent_pid(self):
+        """claude's PID, resolved once from the vendor session sidecar and then
+        CACHED — the sidecar is deleted on clean shutdown, so a lookup at death
+        time fails exactly when it is needed."""
+        cache = self.dir / "agent_pid"
+        if cache.exists():
+            try:
+                return int(cache.read_text().strip())
+            except ValueError:
+                pass
+        d = Path.home() / ".claude" / "sessions"
+        if not d.is_dir():
+            return None
+        for f in d.glob("*.json"):
+            try:
+                if json.loads(f.read_text()).get("sessionId") == self.id:
+                    pid = int(f.stem)
+                    self.dir.mkdir(parents=True, exist_ok=True)
+                    cache.write_text(str(pid))
+                    return pid
+            except (ValueError, OSError):
+                continue
+        return None
+
     def alive(self) -> bool:
+        """Liveness = the AGENT PROCESS, not its terminal.
+
+        `has-session` alone reports `dead` for an agent that is provably alive
+        but whose terminal is gone (detached, or wedged mid-SIGHUP). Caught by
+        harness scenario S6b on 2026-08-05: pid alive before AND after the call,
+        driver said `dead`. Terminal state is only a fallback when no sidecar
+        ever named the pid.
+        """
+        pid = self.agent_pid()
+        if pid is not None:
+            return pid_alive(pid)
         try:
             return self.tmux("has-session", "-t", self.id[:8]).returncode == 0
         except subprocess.TimeoutExpired:
@@ -498,8 +533,13 @@ def cmd_launch(a):
     if r.returncode != 0:
         die("tmux launch failed: %s" % r.stderr.strip(), 5)
     s.save({"id": sid, "workdir": str(workdir), "created": time.time(),
-            "compat": COMPAT_RANGE,
+            "compat": COMPAT_RANGE, "socket": s.sock,
             "transcript": str(transcript_path(workdir, sid))})
+    # Resolve+cache the agent PID while the sidecar still exists (removed at exit).
+    for _ in range(20):
+        if s.agent_pid() is not None:
+            break
+        time.sleep(0.5)
 
     # SPEC rule 4 — trust dialog handled unconditionally, via SCREEN (the only
     # channel that can see it; declared as a coverage gap for this prototype).
