@@ -57,6 +57,21 @@ Hard-won traps. Read before working on this project. Each entry: trap → fix.
 - **Hook-log appends must stay under PIPE_BUF to be atomic.** Cap the payload, strip
   newlines, and use TSV framing — JSON-wrapping-JSON loses the whole event on truncation.
 
+## Liveness (silent-misdetection class — found by harness S6b, 2026-08-05)
+
+- **Terminal-gone is NOT agent-dead.** `tmux has-session` returning false means the
+  terminal died; the claude process outlives it by ~1 s (SIGHUP propagation) and
+  indefinitely if detached or wedged. Two of three prototypes shipped this defect and
+  reported `dead` with the process provably alive (verified: pid alive before AND after
+  the claim). Gate liveness on the agent PID.
+- **Cache the PID at launch.** The sidecar that names it is deleted on clean shutdown, so
+  a lookup at death time fails exactly when it is needed — and the driver silently falls
+  back to the terminal proxy it was trying to avoid.
+- **A liveness test must be able to fail.** Racing the ~1 s SIGHUP window gave two
+  consecutive INCONCLUSIVE runs. `SIGSTOP` the agent first: a stopped process cannot act
+  on its terminal's death, making the window deterministic — and it models the real
+  detached/wedged case. Never score an inconclusive run as a pass.
+
 ## Session sidecar `~/.claude/sessions/<pid>.json` (see docs/discovery-session-sidecar.md)
 
 - **Edge-triggered, not a heartbeat.** `statusUpdatedAt` does not advance while a state
