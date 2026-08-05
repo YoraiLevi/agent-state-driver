@@ -5,14 +5,34 @@ Hard-won traps. Read before working on this project. Each entry: trap → fix.
 ## Driving Claude Code through tmux
 
 - **`❯` is not an idle signal.** The input prompt is rendered the whole time, including
-  mid-generation. Gate readiness on the busy indicator (`esc to interrupt`) being ABSENT,
-  plus N stable screen polls (spinner clears before the final render settles).
+  mid-generation.
+- **`esc to interrupt` is not a reliable busy signal either** (superseded 2026-08-05 —
+  see docs/.research/empirical/q7-q8-reconciliation.md). It is intermittent: absent during
+  foreground tool calls (replaced by the ctrl+b background hint), absent 0/75 samples in
+  some session configurations, present only intermittently even during plain generation.
+  A gate on it silently reads "idle" for whole session classes.
+  **The correct composite gate (verified on 2.1.222):**
+  busy = spinner-verb line `^[✢✳✶✽✻·*]\s+\w+…\s*\(\d+s` OR tool line `⎿\s+Running…\s*\(\d+s`;
+  idle = busy-regex absent AND ≥3 consecutive byte-identical ANSI-stripped captures
+  (busy screens re-render every ≤1 s via the elapsed-seconds tickers; idle screens are
+  byte-stable for tens of seconds). Exclude past-tense forms (`\w+ed for \d+s`).
 - **`send-keys` text and Enter must be separate calls.** `-l` for literal text; a combined
   call gets words interpreted as key names.
 - **`capture-pane -p` returns the visible screen padded with blank rows.** Scroll back
   (`-S -N`) and strip blanks, or you read an empty answer.
 - **Grey ghost text in the input box is an autocomplete hint, not input.** `C-u` cannot
   clear it; ignore it — it vanishes when real characters land.
+- **`hasTrustDialogAccepted` in a project's `.claude/settings.json` does NOT suppress the
+  folder-trust dialog** (verified 2.1.222, Q7 probe). The launch sequence must handle the
+  trust dialog unconditionally (wait for it, `Enter` accepts).
+- **Foreground `sleep` is blocked for nested sessions** by this harness's inherited Bash
+  guard. Timing probes must use `ping -c N -i 1 127.0.0.1 > /dev/null` as the silent workload.
+- **`claude config get` can hang indefinitely** (observed: `preferredNotifChannel`, 120 s+,
+  killed). Wrap any `claude config` invocation in a timeout.
+- **tmux `capture-pane` cannot see transient OSC/BEL sequences** — it replays stored cells,
+  not control strings. For byte-level evidence (BEL, OSC 9/777, alt-screen enters), run the
+  TUI under `script -q raw.log …` and grep the raw log; the raw log is the load-bearing
+  evidence, not the capture.
 - **Prose is not proof.** The model narrates plausibly whether or not a construct ran.
   Assert on machine signals (sentinel files, settings writes, log lines) with a causal
   control (remove the sentinel before the action).
