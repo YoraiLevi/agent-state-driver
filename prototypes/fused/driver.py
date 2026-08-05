@@ -63,7 +63,9 @@ class Session:
 
     def capture(self):
         try:
-            r = self.tmux("capture-pane", "-p", "-t", self.id[:8], "-S", "-60")
+            # VISIBLE PANE ONLY — see scrape-driver: scrollback would carry
+            # stale busy frames into a liveness decision.
+            r = self.tmux("capture-pane", "-p", "-t", self.id[:8])
         except subprocess.TimeoutExpired:
             return None
         return ANSI_RE.sub("", r.stdout) if r.returncode == 0 else None

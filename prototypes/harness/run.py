@@ -115,7 +115,11 @@ def harness_busy(sock, sid):
     cap = Truth.capture(sock, sid[:8])
     if cap is None:
         return None
-    return bool(HARNESS_BUSY_RE.search(HARNESS_ANSI_RE.sub("", cap)))
+    # Anchor to the tail: a scrollback capture carries spinner lines from earlier
+    # frames and would report busy on a long-idle session (same reason as the
+    # drivers; see patterns.TAIL_LINES).
+    keep = [ln for ln in HARNESS_ANSI_RE.sub("", cap).splitlines() if ln.strip()]
+    return bool(HARNESS_BUSY_RE.search("\n".join(keep[-15:])))
 
 
 def snap(workdir, sid, lines=14):

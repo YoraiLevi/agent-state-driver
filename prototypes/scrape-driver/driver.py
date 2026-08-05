@@ -53,7 +53,10 @@ class Session:
         """ANSI-stripped visible screen + scrollback tail. None = capture failed
         (surfaced as evidence, never raised — FMA 6.4)."""
         try:
-            r = self.tmux("capture-pane", "-p", "-t", self.id[:8], "-S", "-60")
+            # VISIBLE PANE ONLY (no -S): scrollback carries spinner lines from
+            # earlier frames, and matching liveness over history reports `busy`
+            # on a long-idle session. The present is what is on screen now.
+            r = self.tmux("capture-pane", "-p", "-t", self.id[:8])
         except subprocess.TimeoutExpired:
             return None
         if r.returncode != 0:

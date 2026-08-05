@@ -65,9 +65,30 @@ STARTING_SCREENS = [
 PROMPT_MARK = re.compile(r"^\s*❯", re.M)
 
 
+# How many trailing non-blank lines constitute "now" on screen.
+# Anchoring is not a tuning knob, it is a correctness requirement (design C3):
+# a capture that includes scrollback contains spinner lines from EARLIER frames,
+# so a whole-buffer match reports `busy` on a session that has been idle for
+# minutes. Caught by the mock-agent portability check on 2026-08-05
+# ("completion is NOT busy-shaped" failed against a 60-line capture) — the same
+# stale-buffer class as awslabs/cli-agent-orchestrator#182.
+TAIL_LINES = 15
+
+
+def tail_region(text: str, lines: int = TAIL_LINES) -> str:
+    """The bottom of the screen — the only region that describes the present."""
+    keep = [ln for ln in text.splitlines() if ln.strip()]
+    return "\n".join(keep[-lines:])
+
+
 def classify_screen(text: str) -> dict:
     """Pure classification of one capture. No state decisions here — the engine
-    composes captures over time (SPEC rule 1). Returns raw signal booleans."""
+    composes captures over time (SPEC rule 1). Returns raw signal booleans.
+
+    Liveness/dialog signals are read from the TAIL only (see TAIL_REGION);
+    passing a full-scrollback capture here is safe because we anchor internally.
+    """
+    text = tail_region(text)
     return {
         "spinner_busy": bool(SPINNER_BUSY.search(text)),
         "tool_running": bool(TOOL_RUNNING.search(text)),
