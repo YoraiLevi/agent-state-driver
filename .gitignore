@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+results/
+.scrape-driver/
+.hook-sentinel/
+.transcript-watch/
+.fused/
