@@ -4,10 +4,17 @@ Ground truth of the project. Updated every session that moves state.
 
 ## Current phase
 
-Phase 2 (functional design + FMA) — in progress: empirical-probe workflow (Q1 hook-retrofit,
-Q4 telemetry, Q5 hooks-doc, Q6 detection-matrix, Q7 false-idle, Q8 altscreen/BEL) running;
-design doc will be written on its results. Phases: 0 infra ✅ · 1 prior-art research ✅ ·
-2 design + FMA 🔄 · 3 prototypes · 4 cross-platform proof · 5 docs + publication.
+Phase 4 (cross-platform proof) — in progress. Phases: 0 infra ✅ · 1 prior-art ✅ ·
+2 design + FMA ✅ · 3 prototypes + harness ✅ · 4 cross-platform 🔄 · 5 docs + publication.
+
+Phase 3 results (docs/results/RACE-macos.md): four prototypes — A scrape, B hooks,
+C transcript+sidecar, D fused — raced under an independent referee. C 7/7, A/B/D 6/7;
+B's only failure is the real permission latch (denial emits no hook event).
+
+Phase 4 so far (docs/results/PORTABILITY.md): mock-agent fixture + portability check
+pass 15/15 on macOS (tmux 3.7b, py3.9.6) AND Debian/podman (tmux 3.3a, py3.11.2).
+Windows leg delegated and in progress. Real-claude-on-Linux declared UNVERIFIED
+(devbox blocked on owner's Tailscale approval; credentials-into-container rejected).
 
 Phase 1 results: docs/.research/prior-art/ — 7 researcher files + SYNTHESIS.md (9-channel
 taxonomy, 14-project comparison, conclusions C1-C11, open questions Q1-Q11). Q11 settled

@@ -57,6 +57,17 @@ Hard-won traps. Read before working on this project. Each entry: trap → fix.
 - **Hook-log appends must stay under PIPE_BUF to be atomic.** Cap the payload, strip
   newlines, and use TSV framing — JSON-wrapping-JSON loses the whole event on truncation.
 
+## Screen capture region (found by the mock-agent fixture, 2026-08-05)
+
+- **Never match liveness over scrollback.** `capture-pane -S -N` returns history, which
+  contains spinner lines from earlier frames — so a busy regex matches on a session that
+  has been idle for minutes. Capture the **visible pane only** (`capture-pane -p`, no
+  `-S`) for state decisions, and anchor pattern matching to the last ~15 non-blank lines
+  regardless. Scrollback is for debugging output, never for "what is happening now".
+  (Same class as `awslabs/cli-agent-orchestrator#182`. A real session masks this because
+  in-place redraw keeps history clean — only a fixture that repaints via `\x1b[2J`
+  exposes it, which is itself the lesson: test the detector against adversarial rendering.)
+
 ## Liveness (silent-misdetection class — found by harness S6b, 2026-08-05)
 
 - **Terminal-gone is NOT agent-dead.** `tmux has-session` returning false means the
