@@ -17,7 +17,7 @@ interactive CLI AI agent, and how they drive it. Covers VibeTunnel, Omnara, happ
 - **VibeTunnel does not solve "is Claude done" generically — it special-cases Claude by
   patching the binary and forcing it onto the terminal-bell notification channel.** It runs
   `claude config set --global preferredNotifChannel terminal_bell` so Claude emits ASCII BEL
-  (``) on turn-completion, then listens for that bell server-side
+  (`\x07`) on turn-completion, then listens for that bell server-side
   (`web/src/server/services/bell-event-handler.ts`). This is a real, working "Claude finished
   its turn" signal, but it depends on an internal Claude Code config knob that could change
   or be removed, and by VibeTunnel's own admission needed a workaround when it stopped firing.
@@ -74,7 +74,7 @@ menu-bar app + iOS app; forwards a local PTY session to a browser/mobile client.
   stripping ANSI, plus per-shell patterns (bash/zsh/fish/powershell/python). Used only to know
   when it's safe to inject an OSC-2 terminal-title escape sequence, not exposed as agent state.
 - **Claude-specific "your turn" signal — the interesting one:** VibeTunnel forces Claude Code
-  to emit a terminal BEL (``) on turn completion by setting
+  to emit a terminal BEL (`\x07`) on turn completion by setting
   `claude config set --global preferredNotifChannel terminal_bell` (documented explicitly in
   `docs/push-notification.md` under Troubleshooting, framed as a fix for when Claude's built-in
   "Your Turn" notification silently stops firing). The PTY layer detects ASCII 7 in the output
