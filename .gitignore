@@ -5,3 +5,6 @@ results/
 .hook-sentinel/
 .transcript-watch/
 .fused/
+.venv/
+uv.lock
+.pytest_cache/

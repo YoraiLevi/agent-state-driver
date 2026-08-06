@@ -1,147 +1,159 @@
 # agent-state-driver
 
-Reliable **state detection** and **programmatic driving** of interactive CLI AI agents.
-Verified against the **real CLI on macOS, Linux and Windows**.
+**Know what your AI coding agent is doing — and drive it — without guessing.**
 
-## The problem
+Works with Claude Code on **macOS, Linux and Windows**, verified against the real CLI on all
+three.
 
-An AI agent running in a terminal is, to any supervisor, a byte stream with no
-machine-readable state. *Is it working? Idle? Waiting on a permission dialog? Waiting for
-input? Dead?* Orchestrators answer this by guessing — `sleep 30`, or polling for a prompt
-character that is on screen **even mid-generation**. Guesses don't compose: a fleet driven
-by guesses fails silently, and silent failure is the expensive kind.
+---
 
-This repo answers it with evidence: a prior-art survey, a state model, a failure-mode
-analysis, four working prototypes raced against an independent referee, and cross-platform
-proof.
+## The problem, in one screen
 
-## Headline findings
+You want to automate an agent in a terminal. So you send it a prompt and then… wait? How
+long? Is it thinking, running a command, or stuck on a permission dialog nobody will ever
+answer?
 
-**1. There is a vendor-written status file absent from every project we surveyed.**
-Claude Code writes `~/.claude/sessions/<pid>.json` per interactive session:
+The obvious answer is wrong in a way that costs you hours:
 
-```json
-{"sessionId":"…","status":"waiting","waitingFor":"permission prompt","kind":"interactive"}
+```python
+send_prompt("refactor the auth module")
+sleep(30)                         # ← a guess
+send_prompt("now run the tests")  # ← may land mid-generation and be silently dropped
 ```
 
-It is machine-readable, led the corresponding transcript record by 9–18 ms in the three
-observations we made (single observations, raw records not retained), needs
-no settings write and no spawn ownership — so it works on a session **a human started by
-hand** — and it is **schema-identical on macOS and Windows** with one exception —
-`procStart` is a Windows FILETIME integer string, not a ctime string, which is
-exactly the field that breaks a naive parser. It appears in none of the projects
-in our survey and in no vendor doc we read. It answers the hardest state directly:
-`waitingFor: "permission prompt"` is what the OpenTelemetry `blocked_on_user` span
-promised and then failed to deliver live: that span is exported only when the block
-**ends**, so its observation lag is **unbounded** — measured at 37.9 s for a 32.9 s
-block, of which 5.0 s was export.
+Polling for the `❯` prompt doesn't help either — **it's on screen the entire time the agent
+is generating.** Waiting for the screen to change doesn't help — an idle statusline clock
+changes it. So orchestrators guess, and a fleet built on guesses fails quietly.
+
+This gives you the real answer instead:
+
+```bash
+uv run prototypes/fused/driver.py --workdir . state --id $SESSION
+```
+```json
+{"state": "waiting:permission",
+ "evidence": [{"channel": "sidecar", "signal": "status=waiting waitingFor=permission prompt"},
+              {"channel": "screen",  "signal": "permission_dialog"}]}
+```
+
+Not just *what* state — **which signal proved it**.
+
+---
+
+## What you get
+
+| | |
+|---|---|
+| **Seven states, not two** | `starting` · `busy` · `idle` · `waiting:permission` · `waiting:input` · `presumed_hung` · `dead` — plus `conflict` when channels disagree |
+| **It refuses to guess** | When the vendor status file and the screen disagree you get `conflict` with a reason, never a confident wrong answer |
+| **It refuses to lose your prompt** | `send` fails loudly if the agent isn't idle, instead of typing into a blocked dialog |
+| **Drive it, don't just watch it** | Launch, answer permission dialogs, wait for a state, kill — as a CLI or a library |
+| **Evidence on every answer** | Every report names the channel and signal behind it, so you can audit a wrong call |
+| **Cross-platform** | tmux on macOS/Linux; a node ConPTY host on Windows (no tmux needed). Same states everywhere |
+| **No dependencies** | The drivers are stdlib-only Python 3.9+. Drop them on a strange machine and they work |
+
+---
+
+## 60 seconds
+
+```bash
+git clone https://github.com/YoraiLevi/agent-state-driver && cd agent-state-driver
+
+uv run demo.py --mock     # free: no credentials, no API turns
+uv run demo.py            # the real thing: drives a live Claude Code session
+```
+
+The demo launches an agent and narrates each state as it is detected — going busy, hitting a
+permission dialog, **refusing a send while blocked**, verifying a denial actually took effect,
+and establishing death from process exit rather than the terminal vanishing. Every line is a
+real observation; nothing is scripted.
+
+```
+[4/6] Asking it to run a command that needs permission…
+   → state: waiting:permission
+     evidence [sidecar] status=waiting waitingFor=permission prompt
+     evidence [screen]  permission_dialog
+
+[5/6] Trying to send while it is blocked on a dialog (should be REFUSED)…
+   → refused, correctly: refusing send in state waiting:permission
+```
+
+Then: **[docs/INDEX.md](docs/INDEX.md)** — a map of everything else.
+
+---
+
+## Using it in your own tooling
+
+Every driver speaks the same JSON CLI ([full contract](prototypes/common/SPEC.md)):
+
+```bash
+D="uv run prototypes/fused/driver.py --workdir ."
+
+ID=$($D launch | jq -r .id)                      # handles the trust dialog for you
+$D wait   --id $ID --until idle --timeout 90
+$D send   --id $ID --text "run the test suite"   # refuses unless idle
+$D wait   --id $ID --until idle,waiting:permission
+$D answer --id $ID --option 1                    # approve a dialog
+$D state  --id $ID                               # {state, attrs, evidence[]}
+$D kill   --id $ID
+```
+
+Exit codes are meaningful: `3` timeout, `4` refused (wrong state), `5` launch failure.
+State is never encoded in an exit code.
+
+**Attaching to a session you didn't start** is possible in principle — the vendor status file
+needs no setup and hooks can be retrofitted mid-session — but the `attach` verb itself is
+[not yet built](https://github.com/YoraiLevi/agent-state-driver/issues/11).
+
+---
+
+## How it works, briefly
+
+Three channels, fused, because each has a hole the others cover:
+
+```
+sidecar   ~/.claude/sessions/<pid>.json   vendor-written status + waitingFor
+   │      fast, needs no setup, works on sessions you didn't spawn
+   │      …but blind before the first prompt, and carries no dialog options
+screen    tmux capture / ConPTY           the always-available floor
+   │      …but vendor UI copy drifts, and an idle clock fakes motion
+process   the agent PID                   the only channel that survives death
+          …but knows nothing except alive/dead
+```
+
+The interesting one is the **sidecar**: Claude Code writes a machine-readable status file per
+session that appears in none of the projects surveyed and in no vendor doc. It answers "is it
+blocked on a human?" directly, in milliseconds.
 → [docs/discovery-session-sidecar.md](docs/discovery-session-sidecar.md)
 
-**2. Hooks can be retrofitted onto a *running* session.**
-Writing the project `.claude/settings.json` mid-session takes effect on the next dispatch —
-proven causally in both directions (install → fires, remove → stops). The prior-art survey
-had concluded that observing a human-launched session was screen-scraping only. Together
-with the sidecar, that conclusion is dead.
+---
 
-**3. Denying a permission dialog emits no event at all.**
-On macOS, re-probed with a 13-event set including `PermissionDenied`, `PostToolUseFailure`
-and `StopFailure`: silent across 50 s and 145 s of observation. On Windows, observed with a
-7-event set over an 11 s window — a weaker probe, and stated as such. A hook-only
-observer latches "waiting for permission" **forever**. The transcript is equally blind:
-zero appends for a full 79.6 s dialog window (observed live; raw record not retained). Only the sidecar and the screen see it.
-This is the single strongest argument for fusing channels rather than picking the best one.
-
-**4. No single channel wins.**
-
-| Prototype | Channels | Score | Strength | Fatal gap |
-|---|---|---|---|---|
-| A `scrape-driver` | screen + process | 6/6 (+1 inconclusive) | needs zero vendor cooperation | version-volatile UI copy; unresolvable false-busy |
-| B `hook-sentinel` | hooks + process | **6/7 — one real failure** | fastest turn boundaries (send→complete 3.4 s) | cannot clear the permission latch |
-| C `transcript-watch` | transcript + sidecar + process | 7/7 | durable, no settings write | blind before the first prompt |
-| D `fused` | sidecar + screen + process | 6/6 (+1 inconclusive) | reports conflicts instead of guessing | inherits screen's poll latency |
-
-Scores count only *decided* checks; an inconclusive run (the referee could not establish
-ground truth in time) is never counted as a pass. Only B has a genuine failure, and it is
-the permission latch above — correct behavior, correctly scored as a failure.
-
-→ [docs/results/RACE-macos.md](docs/results/RACE-macos.md)
-
-## What the building found that the reading did not
-
-Every one of these was caught by running code against real sessions, and each is now a
-rule in [PITFALLS.md](PITFALLS.md):
-
-- **`esc to interrupt` is intermittent**, not absent and not reliable — present in 4 of 14
-  captures during generation, gone entirely during tool calls. It was the recommended busy
-  signal. A detector gated on it silently reads "idle" while the agent works.
-- **Terminal-gone is not agent-dead.** The process outlives its terminal by 0.81–1.31 s,
-  and indefinitely if detached. Two of the four prototypes reported `dead` with the process
-  provably alive — the exact silent-misdetection class this project exists to eliminate.
-  Records: [docs/results/s6b/](docs/results/s6b/) (`premature: true` with
-  `pid_alive_before`/`after` both true, plus the post-fix passes).
-- **Motion is necessary but not sufficient for busy.** A statusline with a live wall-clock
-  moves the screen hash while idle. The fused driver caught this live as
-  `conflict: sidecar=idle screen=busy` and refused to guess — record:
-  [docs/results/conflict/](docs/results/conflict/).
-- **Never match liveness over scrollback** — it holds spinner lines from earlier frames.
-  Found by a mock fixture on its first run; a real session had masked it.
-
-## Layout
-
-```
-docs/design/functional-design.md      state model, channel reliability, fusion rules, FMA
-docs/discovery-session-sidecar.md     the undocumented vendor status channel
-docs/results/                         race scores, portability, raw JSONL records
-docs/.research/prior-art/             prior-art survey + synthesis (C1–C11, Q1–Q11)
-docs/.research/empirical/             live probes that settled each open question
-prototypes/common/SPEC.md             the driver contract all prototypes implement
-prototypes/{scrape-driver,hook-sentinel,transcript-watch,fused}/
-prototypes/harness/                   the independent referee
-prototypes/mockagent/                 deterministic fixture + cross-platform check
-```
-
-## Try it
-
-Zero credentials, zero API cost — drives a deterministic mock through the full state
-machine and asserts the **shipped** detector (`patterns.classify_screen`) reads each state
-correctly. Sabotaging `patterns.py` fails this check; that dependency is the point:
+## Testing and containers
 
 ```bash
-python3 prototypes/mockagent/portability_check.py        # 16/16 on macOS and Linux
+uv run pytest -m "not slow"   # 16 unit tests, instant
+uv run pytest                 # 23 tests incl. live tmux sessions — no credentials, no cost
 ```
 
-Against a real session (spends API turns):
+Prebuilt environments for both OS families: **[containers/](containers/)**.
 
-```bash
-python3 prototypes/harness/run.py \
-    --driver prototypes/fused/driver.py --scenarios S1,S2,S4,S6 --out results/
-```
+---
 
-Requires `tmux` and Python 3.9+ on macOS/Linux. On Windows the hosting layer is a
-~90-line node ConPTY host instead of tmux; every detection channel is unchanged
-(→ [windows-leg.md](docs/.research/empirical/windows-leg.md)).
+## What is proven, and what isn't
 
-## Honest coverage
+Verified against the **real CLI**: `starting`, `busy`, `idle`, `waiting:permission`, `dead` —
+on macOS ([race](docs/results/RACE-macos.md)), Linux
+([WSL2, kernel 6.18](docs/results/linux/)) and Windows
+([all four channels](docs/.research/empirical/windows-leg.md)).
 
-Verified against the real CLI: states `starting`, `busy`, `idle`, `waiting:permission`,
-`dead` — on **macOS** (full race, 2.1.222), **Linux** (WSL2 Ubuntu 26.04, kernel 6.18,
-2.1.223 — [record](docs/results/linux/)) and **Windows** (all four channels, 2.1.222).
+**Not verified** — listed because it would be easy not to mention:
+`waiting:input` against a real question dialog · `presumed_hung` live · compaction behavior
+(so the hang-watchdog threshold is still a guess) · the `attach` verb · HTTP hooks ·
+stream-json mode · concurrent sessions · Windows persistence across logoff.
 
-**Not verified:**
-- **attached-posture driving** — the mechanism is proven (hook retrofit, Q1) and the
-  enabler is proven (sidecar needs no spawn ownership), but **no driver implements an
-  `attach` verb** and no scenario exercises it
-- `conflict` as a *scored referee outcome* — the fused driver emitted it live
-  (record committed) but no harness scenario asserts it
-- `waiting:input` against a real question dialog; `presumed_hung` live; compaction
-- HTTP hooks and `-p --output-format stream-json` (surveyed, never built)
-- concurrent sessions; Windows persistence across logoff/reboot
-
-Every number above traces to a record under `docs/results/` or a probe under
-`docs/.research/empirical/`, except the two explicitly marked "raw record not retained".
-Where two probes disagreed, a third experiment settled it and both originals are cited
-(→ [q7-q8-reconciliation.md](docs/.research/empirical/q7-q8-reconciliation.md)).
-This section was rewritten after an adversarial review of the repo's own claims.
+Every number in this README traces to a record under [docs/results/](docs/results/) or a probe
+under [docs/.research/empirical/](docs/.research/empirical/). An adversarial review was run
+against these claims before publication and its findings applied.
 
 ## License
 
