@@ -135,7 +135,17 @@ uv run pytest -m "not slow"   # 16 unit tests, instant
 uv run pytest                 # 23 tests incl. live tmux sessions — no credentials, no cost
 ```
 
-Prebuilt environments for both OS families: **[containers/](containers/)**.
+Prebuilt environments for both OS families — no dependency archaeology:
+
+```bash
+containers/check.sh          # macOS/Linux host, podman  → 16/16, or `test` for 23 tests
+containers\check.ps1         # Windows host, docker      → 11/11 ConPTY host checks
+```
+
+The Linux image carries tmux, uv and a pinned CPython; the Windows image carries node +
+node-pty (ConPTY) + `@xterm/headless`, which is how an agent TUI is hosted where there is no
+tmux. Neither image contains credentials, so both run the credential-free checks only.
+Details and the build traps: **[containers/README.md](containers/README.md)**.
 
 ---
 

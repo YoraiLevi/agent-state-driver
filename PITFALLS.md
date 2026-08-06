@@ -57,6 +57,26 @@ Hard-won traps. Read before working on this project. Each entry: trap → fix.
 - **Hook-log appends must stay under PIPE_BUF to be atomic.** Cap the payload, strip
   newlines, and use TSV framing — JSON-wrapping-JSON loses the whole event on truncation.
 
+## Containers (verified 2026-08-06, both families built and run)
+
+- **`ENV PATH="C:\nodejs;${PATH}"` DESTROYS PATH in a Windows container.** servercore sets
+  PATH in the registry, not as an image `ENV`, so `${PATH}` expands to empty. The next `RUN`
+  dies with `hcs::System::CreateProcess … The system cannot find the file specified (0x2)`
+  because even `powershell.exe` stops resolving. Spell the base PATH out in full.
+- **`WORKDIR C:\host` → `the working directory 'C:host' is invalid`** — the parser eats the
+  backslash. Use `C:\\host`.
+- **`uv pip install --system` refuses a uv-managed interpreter** (exit 2, "Virtual
+  environments were not considered due to the --system flag"). Use `uv venv` and put it on
+  PATH.
+- **npm 11 silently skips lifecycle scripts** (`npm warn allow-scripts`), so a global install
+  of a package with native bindings surfaces much later as `MODULE_NOT_FOUND`. Pass
+  `--allow-scripts=<pkg>`.
+- **node-pty's `kill()` can raise `Error: AttachConsole failed` inside a container.** End
+  children cleanly and gate on process liveness rather than on the kill call succeeding —
+  the same rule as the terminal-vs-process liveness lesson below.
+- **A read-only bind mount cannot host pytest's cache.** Pass `-p no:cacheprovider` rather
+  than emit a warning that reads like a failure to a first-time user.
+
 ## Windows hosting (verified live on windesk, 2026-08-05)
 
 - **Hook commands cannot use `>>` redirection on Windows.** The redirect is eaten by an
