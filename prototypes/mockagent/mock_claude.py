@@ -57,9 +57,13 @@ class Sidecar:
     it is edge-triggered (timestamp does not advance while a state persists),
     and a clean exit DELETES the file."""
 
-    def __init__(self, d, sid):
+    def __init__(self, d, sid, name=None):
         self.dir = d
         self.sid = sid
+        # Operator-set name vs vendor-derived: `nameSource` is null when the
+        # operator passed --name and "derived" when the vendor guessed from the
+        # conversation. The fleet treats only the former as an identity claim.
+        self.name = name
         self.path = os.path.join(d, "%d.json" % os.getpid())
         os.makedirs(d, exist_ok=True)
         self.status = None
@@ -71,6 +75,8 @@ class Sidecar:
         self.status = status
         now = int(time.time() * 1000)
         doc = {"pid": os.getpid(), "sessionId": self.sid, "cwd": os.getcwd(),
+               "name": self.name if self.name else "mock-derived",
+               "nameSource": None if self.name else "derived",
                "startedAt": int(state["started"] * 1000), "version": "2.1.222-mock",
                "kind": "interactive", "entrypoint": "cli", "status": status,
                "updatedAt": now, "statusUpdatedAt": now}
@@ -150,9 +156,11 @@ def main():
     ap.add_argument("--sessions-dir",
                     default=os.path.join(os.path.expanduser("~"), ".claude", "sessions"))
     ap.add_argument("--busy-seconds", type=float, default=4.0)
+    ap.add_argument("--name", default=None,
+                    help="operator-set session name (nameSource stays null)")
     a = ap.parse_args()
 
-    sc = Sidecar(a.sessions_dir, a.session_id)
+    sc = Sidecar(a.sessions_dir, a.session_id, a.name)
     threading.Thread(target=painter, daemon=True).start()
 
     try:
