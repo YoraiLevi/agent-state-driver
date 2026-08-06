@@ -8,6 +8,7 @@ Three ways in. Pick the one that matches why you're here.
 
 | Read | Why |
 |---|---|
+| **[MANUAL.md](MANUAL.md)** | **The reference: every command, state, exit code, recipe, and limit** |
 | [../README.md](../README.md) | What it does, in 60 seconds |
 | [../demo.py](../demo.py) — `uv run demo.py` | Watch all six states detected on a real session |
 | [../prototypes/common/SPEC.md](../prototypes/common/SPEC.md) | The driver contract: every command, every state, every rule |

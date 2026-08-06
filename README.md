@@ -78,7 +78,8 @@ real observation; nothing is scripted.
    → refused, correctly: refusing send in state waiting:permission
 ```
 
-Then: **[docs/INDEX.md](docs/INDEX.md)** — a map of everything else.
+Then: **[docs/MANUAL.md](docs/MANUAL.md)** — every command, state, exit code and
+recipe. (The other docs explain *why* it works this way; the manual is the *how*.)
 
 ---
 
