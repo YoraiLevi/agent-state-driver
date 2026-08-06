@@ -1,0 +1,63 @@
+# agent-state-driver — Linux development / verification image.
+#
+# Contains everything the credential-free checks need: tmux (the hosting layer),
+# git, and a uv-managed CPython (no distro python, no pip, no venv archaeology).
+# Contains NO credentials and NO claude CLI — see containers/README.md for why.
+#
+# Build context is the REPO ROOT:
+#   podman build -t asd-linux -f containers/linux/Containerfile .
+
+FROM ghcr.io/astral-sh/uv:0.12.2 AS uv
+
+FROM docker.io/library/debian:bookworm-slim
+
+# tmux  — the terminal host the drivers and the portability check drive.
+# procps — pgrep/ps, the process-liveness channel.
+# git    — clean-clone verification, and the normal reason to open a shell here.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        tmux \
+        git \
+        procps \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+# uv is the only Python installer in this image. The interpreter is uv-managed
+# and pinned; `--default` puts `python` / `python3` on PATH so every command in
+# the repo's docs works unchanged.
+COPY --from=uv /uv /uvx /usr/local/bin/
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv/python \
+    UV_PYTHON_BIN_DIR=/usr/local/bin \
+    UV_LINK_MODE=copy \
+    UV_NO_MANAGED_PYTHON_DOWNLOADS_HINT=1
+RUN uv python install 3.13 --default --preview-features python-install-default \
+    && python3 --version \
+    && python --version
+
+# The drivers are stdlib-only by design; pytest is the ONLY test dependency, and
+# it is installed here rather than resolved from uv.lock at runtime so the image
+# needs no network to run the suite (and does not go stale against the lockfile).
+# It lives in a venv, not the interpreter: `uv pip install --system` refuses a
+# uv-managed interpreter ("Virtual environments were not considered due to the
+# --system flag", exit 2). OBSERVED.
+RUN uv venv --python 3.13 /opt/venv \
+    && uv pip install --python /opt/venv/bin/python 'pytest>=7.4'
+ENV PATH="/opt/venv/bin:${PATH}" VIRTUAL_ENV=/opt/venv
+RUN python3 --version && python3 -m pytest --version
+
+# Unprivileged by default: nothing in this image needs root at runtime.
+RUN useradd --create-home --shell /bin/bash --uid 1000 asd
+
+# A baked copy of the repo, so `podman run asd-linux` verifies with no mount.
+# A read-only bind mount on /work overrides it (see the entrypoint).
+COPY --chown=asd:asd . /opt/agent-state-driver
+COPY --chown=asd:asd containers/linux/entrypoint.sh /usr/local/bin/asd-check
+RUN chmod 0755 /usr/local/bin/asd-check
+
+USER asd
+WORKDIR /work
+ENV HOME=/home/asd
+ENTRYPOINT ["/usr/local/bin/asd-check"]
+CMD ["check"]

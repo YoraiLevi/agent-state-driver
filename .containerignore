@@ -1,0 +1,6 @@
+.git
+.research
+results
+*.pyc
+__pycache__
+.DS_Store

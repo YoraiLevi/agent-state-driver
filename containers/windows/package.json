@@ -1,0 +1,14 @@
+{
+  "name": "asd-conpty-host",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Windows hosting layer for agent-state-driver: ConPTY + headless screen model.",
+  "license": "MIT",
+  "scripts": {
+    "check": "node conpty-selftest.js"
+  },
+  "dependencies": {
+    "@xterm/headless": "^5.5.0",
+    "node-pty": "^1.1.0"
+  }
+}
