@@ -463,7 +463,7 @@ must guess and we do not.
 |---|---|---|---|---|
 | 1 | **Agent wedged mid-turn** (heartbeat fresh, dispatch stuck) — `agent-mesh` class BB | **VS** sidecar `busy` unchanged + screen hash frozen + PID alive, past `hung_after_s`, observer-computed at read time | `presumed_hung`; agent becomes unschedulable; lease revoked; cooperative-checkpoint attempted before any restart | Every surveyed system: a timeout on silence. `agent-mesh`'s own mitigation is "heartbeat gated on loop liveness" — still self-report |
 | 2 | **Agent SIGKILLed** | process channel only — the sole channel that survives death; overrides everything (`functional-design.md:111`) | `dead` in ~0.03-0.04 s (RACE-macos); work-item requeued **only after** a positive fence | cultureagent reaches `presumed_hung` after 90 s; k8s waits 5 min before the first eviction |
-| 3 | **Terminal died, agent alive** | PID cached at launch; sidecar is deleted on clean exit so it cannot name the PID later | Not death. Measured window: terminal death → process death is **0.81-1.31 s** — the silent-misdetection window S6b polices | claude-flow counts `ps \| grep` and divides by a magic constant |
+| 3 | **Terminal died, agent alive** | PID cached at launch; sidecar is deleted on clean exit so it cannot name the PID later | Not death. Measured window: terminal death → process death is **0.76-1.31 s** — the silent-misdetection window S6b polices | claude-flow counts `ps \| grep` and divides by a magic constant |
 | 4 | **Permanent permission latch** on an `attached-noscreen` agent | **VS** sidecar `waitingFor` present + `screen_available:false` | Prevented at placement (`posture_required`); if it happens anyway, escalate to a human role immediately — the mesh declares it cannot self-clear | Nobody models observation posture; the work-item hangs forever |
 | 5 | **Compaction** (looks exactly like a hang) | `PreCompact`/`PostCompact` hooks or the transcript `compact_boundary` record | Suppress the staleness watchdog **and** the reassignment timer for the compaction window | Screen-only observers false-alarm. Threshold still a guess — see section 8 |
 | 6 | **Channel disagreement** | fusion rule 5 → `conflict`, `attrs.reason` names the mechanism | Agent is **unschedulable but not evicted** (k8s `Ready=Unknown` posture, minus the 5-minute blind wait, because we can re-probe immediately) | Every scraper picks a winner and reports it confidently |
@@ -683,6 +683,6 @@ Repo, first-hand: `README.md:47,49,53,94,101,112-114` ·
 `docs/design/functional-design.md:23-26,62,74-76,94,95,99-116,139-150,257` ·
 `docs/discovery-session-sidecar.md:16-17,53-56,57-63,64-67,71-73` ·
 `prototypes/common/SPEC.md` (rules 1-9, scenario suite) ·
-`docs/results/RACE-macos.md` (latency table; terminal-death→process-death 0.81-1.31 s) ·
+`docs/results/RACE-macos.md` (latency table; terminal-death→process-death 0.76-1.31 s) ·
 `docs/.research/prior-art/SYNTHESIS.md` (1.9, 2, 3 — conclusions C1-C11) ·
 `STATE.md` (locked decisions) · `HANDOFF.md` (open work).

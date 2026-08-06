@@ -26,7 +26,7 @@ window closed before the driver could be asked. Inconclusive is never a pass.
 | send → permission dialog | 3.1 | 7.5 | **2.1** | **2.1** |
 | true death → detected | 0.04 | 0.04 | 0.04 | 0.03 |
 
-Measured incidentally and repeatedly: **terminal death → process death = 0.81-1.31 s**.
+Measured incidentally and repeatedly: **terminal death → process death = 0.76-1.31 s**.
 That gap is the silent-misdetection window that scenario S6b exists to police.
 
 ## n=1, and one visible counter-example
