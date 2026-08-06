@@ -233,7 +233,11 @@ def s4_permission_deny(driver, workdir, sid, results):
 def agent_pid(sid):
     """The claude PID for a session, via the vendor session sidecar
     (docs/discovery-session-sidecar.md). None if no sidecar exists."""
-    d = Path.home() / ".claude" / "sessions"
+    # honour CLAUDE_CONFIG_DIR — the referee had the same hardcoded-path bug the
+    # drivers did, so its ground truth silently degraded to kill_return on any
+    # session with a custom config dir (found on WSL2, 2026-08-06)
+    base = os.environ.get("CLAUDE_CONFIG_DIR")
+    d = (Path(base) if base else Path.home() / ".claude") / "sessions"
     if not d.is_dir():
         return None
     for f in d.glob("*.json"):
