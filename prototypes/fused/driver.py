@@ -371,6 +371,9 @@ def cmd_list(a):
             except (OSError, TypeError, ValueError):
                 alive = False
             out.append({"sessionId": doc.get("sessionId"), "pid": pid,
+                        # name/nameSource matter: role binding treats only an
+                        # OPERATOR-set name as an identity claim (F3)
+                        "name": doc.get("name"), "nameSource": doc.get("nameSource"),
                         "cwd": doc.get("cwd"), "status": doc.get("status"),
                         "waitingFor": doc.get("waitingFor"),
                         "kind": doc.get("kind"), "version": doc.get("version"),
