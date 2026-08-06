@@ -9,6 +9,7 @@ Three ways in. Pick the one that matches why you're here.
 | Read | Why |
 |---|---|
 | **[MANUAL.md](MANUAL.md)** | **The reference: every command, state, exit code, recipe, and limit** |
+| [windows-persistence-answer.md](windows-persistence-answer.md) | How the ADE-kills-my-agent problem is solved: what AgentCulture covers, what it doesn't |
 | [ecosystem-map.md](ecosystem-map.md) | AgentCulture: all ~78 repos categorised, with ADOPT/WATCH/IGNORE and a build order |
 | [../README.md](../README.md) | What it does, in 60 seconds |
 | [../demo.py](../demo.py) — `uv run demo.py` | Watch all six states detected on a real session |
