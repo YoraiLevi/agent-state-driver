@@ -57,8 +57,16 @@ TRUST_DIALOG = [
     re.compile(r"Yes, proceed"),
 ]
 STARTING_SCREENS = [
-    re.compile(r"Choose the text style"),          # theme picker (virgin config)
+    re.compile(r"Choose the text style"),          # theme picker header…
+    # …but the header scrolls out of the anchored tail, leaving only option rows that
+    # look like any numbered dialog — which made the theme picker read as
+    # `waiting:input` and blocked every send. Found on a fresh WSL2 Linux config,
+    # 2026-08-06: match the option literals, which are always in the tail.
+    re.compile(r"Dark mode \(colorblind-friendly\)"),
+    re.compile(r"Auto \(match terminal\)"),
     re.compile(r"Select login method"),            # login picker
+    re.compile(r"Claude account with subscription"),
+    re.compile(r"Anthropic Console account"),
 ]
 
 # --- prompt marker (necessary-not-sufficient; PITFALLS: never an idle gate) ----

@@ -52,6 +52,17 @@ SIDECAR_STATUS = {"idle": "idle", "busy": "busy", "waiting": "waiting"}
 SIDECAR_WAITING_FOR = {"permission prompt": "waiting:permission"}
 
 
+
+def sessions_dir():
+    """Where the vendor writes session sidecars.
+
+    Follows CLAUDE_CONFIG_DIR when set — hardcoding ~/.claude made the sidecar
+    channel silently disappear (pid: null, liveness degraded to the terminal
+    proxy) for any session with a custom config dir. Found on WSL2, 2026-08-06.
+    """
+    base = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (Path(base) if base else Path.home() / ".claude") / "sessions"
+
 def die(msg, code=1):
     print(json.dumps({"error": msg}), flush=True)
     sys.exit(code)
@@ -94,7 +105,7 @@ class Session:
         return None
 
     def _sidecar_path(self):
-        d = Path.home() / ".claude" / "sessions"
+        d = sessions_dir()
         if not d.is_dir():
             return None
         for f in d.glob("*.json"):
@@ -113,7 +124,7 @@ class Session:
         if p is None:
             pid = self.agent_pid()
             if pid is not None:
-                p = Path.home() / ".claude" / "sessions" / ("%d.json" % pid)
+                p = sessions_dir() / ("%d.json" % pid)
                 if not p.exists():
                     return None, None, None
             else:

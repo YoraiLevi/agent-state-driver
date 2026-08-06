@@ -42,6 +42,17 @@ CAPTURE_TIMEOUT_S = 5  # FMA 6.4: a hanging capture is an event, not a crash
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07")
 
 
+
+def sessions_dir():
+    """Where the vendor writes session sidecars.
+
+    Follows CLAUDE_CONFIG_DIR when set — hardcoding ~/.claude made the sidecar
+    channel silently disappear (pid: null, liveness degraded to the terminal
+    proxy) for any session with a custom config dir. Found on WSL2, 2026-08-06.
+    """
+    base = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (Path(base) if base else Path.home() / ".claude") / "sessions"
+
 def die(msg: str, code: int = 1):
     print(json.dumps({"error": msg}), flush=True)
     sys.exit(code)
@@ -88,7 +99,7 @@ class Session:
                 return int(cache.read_text().strip())
             except ValueError:
                 pass
-        d = Path.home() / ".claude" / "sessions"
+        d = sessions_dir()
         if not d.is_dir():
             return None
         for f in d.glob("*.json"):
