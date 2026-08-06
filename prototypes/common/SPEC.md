@@ -38,6 +38,11 @@ driver.py send   --id I --text "..."                -> sends text + Enter; refus
 driver.py answer --id I --option N                  -> answers a waiting:* dialog
 driver.py screen --id I [--lines N]                 -> current capture (debug)
 driver.py kill   --id I                             -> terminate + cleanup
+
+driver.py list                                      -> {"sessions":[{sessionId,pid,cwd,
+                                                        status,waitingFor,alive}]}
+driver.py attach --session-id S [--socket SOCK]     -> adopt a session this process did
+                                                       NOT launch
 ```
 
 Rules binding all implementations (from FMA):
@@ -63,7 +68,12 @@ Rules binding all implementations (from FMA):
    out startup SHOULD also return `settled`. Consumers (and the harness) must never compare
    `launch.state` across prototypes — call `state`/`wait` for a comparable reading.
    *(Divergence found between A and B, resolved 2026-08-05.)*
-8. A driver must never resolve a channel disagreement or an unclearable latch by picking a
+8. `attach` must declare its own degradation. Without a reachable terminal the sidecar
+   and process channels still give busy/idle/waiting/dead, but dialog option rows are
+   unreadable — so dialogs can be DETECTED and never ANSWERED. Report
+   `screen_available: false` and say what is impossible; do not silently expose an
+   `answer` verb that cannot work.
+9. A driver must never resolve a channel disagreement or an unclearable latch by picking a
    winner. Report `conflict` with `attrs.reason`. Guessing is the failure this project exists
    to eliminate.
 

@@ -349,6 +349,99 @@ def cmd_launch(a):
           flush=True)
 
 
+def cmd_list(a):
+    """Every live agent on this machine, from the vendor sidecars alone.
+
+    No tmux, no settings, no spawn ownership — this is what makes `attach`
+    possible at all: the sidecar names every interactive session, including ones
+    started by a human in a terminal we have never seen.
+    """
+    out = []
+    d = sessions_dir()
+    if d.is_dir():
+        for f in sorted(d.glob("*.json")):
+            try:
+                doc = json.loads(f.read_text())
+            except (ValueError, OSError):
+                continue
+            pid = doc.get("pid")
+            try:
+                os.kill(int(pid), 0)
+                alive = True
+            except (OSError, TypeError, ValueError):
+                alive = False
+            out.append({"sessionId": doc.get("sessionId"), "pid": pid,
+                        "cwd": doc.get("cwd"), "status": doc.get("status"),
+                        "waitingFor": doc.get("waitingFor"),
+                        "kind": doc.get("kind"), "version": doc.get("version"),
+                        # absence is not death and staleness is not liveness, so the
+                        # pid is checked here rather than inferred from the file
+                        "alive": alive})
+    print(json.dumps({"sessions": out}), flush=True)
+
+
+def cmd_attach(a):
+    """Adopt a session this driver did not launch.
+
+    The prior-art survey concluded that observing a human-launched agent was
+    screen-scraping only. Two findings killed that: the vendor sidecar needs no
+    spawn ownership, and hooks can be retrofitted mid-session (Q1). This verb is
+    the capability those findings implied.
+
+    What attach can and cannot do is a straight consequence of which channels
+    are reachable, and it is recorded in the session meta so `state` never
+    over-claims:
+      * sidecar + process  — always available; gives busy/idle/waiting/dead.
+      * screen             — ONLY if the session is in a tmux server we can name
+                             (--socket/--target). Without it there is no way to
+                             read dialog option rows, so dialogs can be DETECTED
+                             (sidecar) but not ANSWERED.
+    """
+    workdir = Path(a.workdir).resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
+    sid = a.session_id
+
+    # Resolve the target from the sidecar — the session must exist and be alive.
+    match = None
+    d = sessions_dir()
+    if d.is_dir():
+        for f in d.glob("*.json"):
+            try:
+                doc = json.loads(f.read_text())
+            except (ValueError, OSError):
+                continue
+            if doc.get("sessionId") == sid:
+                match = (f, doc)
+                break
+    if match is None:
+        die("no live session with sessionId %s (run `list`)" % sid, 2)
+    f, doc = match
+    pid = doc.get("pid")
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, TypeError, ValueError):
+        die("session %s has a sidecar but pid %s is not alive" % (sid, pid), 2)
+
+    s = Session(workdir, sid)
+    if a.socket:
+        s.sock = a.socket
+    screen = bool(a.socket) and s.terminal_alive()
+    s.save({"id": sid, "workdir": str(workdir), "created": time.time(),
+            "compat": COMPAT_RANGE, "socket": s.sock if a.socket else None,
+            "attached": True, "screen_available": screen,
+            "cwd": doc.get("cwd")})
+    s.dir.mkdir(parents=True, exist_ok=True)
+    (s.dir / "agent_pid").write_text(str(pid))
+
+    rep = observe_settled(s)
+    rep.setdefault("attrs", {})["attached"] = True
+    if not screen:
+        rep["attrs"]["screen_available"] = False
+        rep["attrs"]["cannot"] = "answer dialogs (no terminal); detection only"
+    print(json.dumps({"id": sid, "pid": pid, "cwd": doc.get("cwd"),
+                      "screen_available": screen, "report": rep}), flush=True)
+
+
 def cmd_state(a):
     print(json.dumps(observe_settled(find_session(Path(a.workdir).resolve(), a.id))),
           flush=True)
@@ -420,6 +513,14 @@ def main():
     p.add_argument("--workdir", default=".")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("launch").set_defaults(f=cmd_launch)
+    sub.add_parser("list").set_defaults(f=cmd_list)
+    ap_at = sub.add_parser("attach")
+    ap_at.add_argument("--session-id", required=True,
+                       help="sessionId of a live session (see `list`)")
+    ap_at.add_argument("--socket", default=None,
+                       help="tmux socket hosting it, if any; without this, dialogs "
+                            "can be detected but not answered")
+    ap_at.set_defaults(f=cmd_attach)
     for name, f in [("state", cmd_state), ("wait", cmd_wait), ("send", cmd_send),
                     ("answer", cmd_answer), ("screen", cmd_screen), ("kill", cmd_kill)]:
         sp = sub.add_parser(name)

@@ -101,9 +101,17 @@ $D kill   --id $ID
 Exit codes are meaningful: `3` timeout, `4` refused (wrong state), `5` launch failure.
 State is never encoded in an exit code.
 
-**Attaching to a session you didn't start** is possible in principle — the vendor status file
-needs no setup and hooks can be retrofitted mid-session — but the `attach` verb itself is
-[not yet built](https://github.com/YoraiLevi/agent-state-driver/issues/11).
+**Attaching to a session you didn't start** works — the vendor status file needs no setup
+and no spawn ownership:
+
+```bash
+$D list                                        # every live agent on this machine
+$D attach --session-id <id> --socket <tmux>    # adopt it, then drive it normally
+```
+
+Without `--socket` there is no terminal to read, so `attach` reports
+`screen_available: false` and tells you what it cannot do: dialogs are still *detected*
+via the sidecar, but cannot be *answered*. It degrades loudly rather than pretending.
 
 ---
 
@@ -158,8 +166,8 @@ on macOS ([race](docs/results/RACE-macos.md)), Linux
 
 **Not verified** — listed because it would be easy not to mention:
 `waiting:input` against a real question dialog · `presumed_hung` live · compaction behavior
-(so the hang-watchdog threshold is still a guess) · the `attach` verb · HTTP hooks ·
-stream-json mode · concurrent sessions · Windows persistence across logoff.
+(so the hang-watchdog threshold is still a guess) · HTTP hooks · stream-json mode ·
+multi-agent orchestration · Windows persistence across logoff.
 
 Every number in this README traces to a record under [docs/results/](docs/results/) or a probe
 under [docs/.research/empirical/](docs/.research/empirical/). An adversarial review was run

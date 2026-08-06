@@ -152,3 +152,52 @@ def test_portability_check_passes(tmp_path):
     )
     assert r.returncode == 0, r.stdout + r.stderr
     assert "checks passed" in r.stdout
+
+
+@requires_tmux
+class TestAttach:
+    """The attached posture — observing an agent this process did not launch.
+
+    The prior-art survey concluded this was screen-scraping only. Two findings
+    killed that: the vendor sidecar needs no spawn ownership, and hooks can be
+    retrofitted mid-session. These tests hold `attach` to what it actually
+    promises, including its declared degradation.
+    """
+
+    def _driver(self, *args, workdir, env=None):
+        e = {**os.environ, **(env or {})}
+        r = subprocess.run(
+            [sys.executable, str(DRIVERS["fused"]), "--workdir", str(workdir), *args],
+            capture_output=True, text=True, timeout=120, env=e)
+        line = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "{}"
+        return json.loads(line), r.returncode
+
+    def test_list_sees_a_session_it_did_not_launch(self, mock_session, tmp_path):
+        """`list` enumerates live agents from the sidecars alone — no tmux, no
+        settings, no ownership."""
+        env = {"CLAUDE_CONFIG_DIR": str(mock_session["sessions"].parent)}
+        rep, rc = self._driver("list", workdir=tmp_path / "op", env=env)
+        assert rc == 0
+        ids = [s["sessionId"] for s in rep["sessions"]]
+        assert mock_session["sid"] in ids
+        row = next(s for s in rep["sessions"] if s["sessionId"] == mock_session["sid"])
+        assert row["alive"] is True
+
+    def test_attach_without_a_terminal_degrades_honestly(self, mock_session, tmp_path):
+        """No socket means no screen: dialogs can be DETECTED but never ANSWERED.
+        The driver must say so rather than silently offer a capability it lacks."""
+        env = {"CLAUDE_CONFIG_DIR": str(mock_session["sessions"].parent)}
+        op = tmp_path / "op2"
+        rep, rc = self._driver("attach", "--session-id", mock_session["sid"],
+                               workdir=op, env=env)
+        assert rc == 0
+        assert rep["screen_available"] is False
+        attrs = rep["report"]["attrs"]
+        assert attrs["attached"] is True
+        assert "answer dialogs" in attrs["cannot"]
+
+    def test_attach_refuses_an_unknown_session(self, tmp_path):
+        rep, rc = self._driver("attach", "--session-id", str(uuid.uuid4()),
+                               workdir=tmp_path / "op3")
+        assert rc == 2
+        assert "no live session" in rep["error"]
