@@ -94,7 +94,7 @@ Then `claude.exe` itself under the same ConPTY — the trust dialog painted imme
  "statusUpdatedAt":1785957724621,"bridgeSessionId":"session_019SaR4Q1AWZrV3CLTTf54vk"}
 ```
 
-**The schema is byte-for-byte the macOS schema** (docs/discovery-session-sidecar.md) with one
+**The schema is schema-identical (key-for-key) the macOS schema** (docs/discovery-session-sidecar.md) with one
 difference: `procStart` is a Windows FILETIME-style integer string
 (`"134304313072057287"`) where macOS carries a ctime string (`"Wed Aug  5 18:03:45 2026"`).
 A parser that treats `procStart` as a date string breaks on Windows.

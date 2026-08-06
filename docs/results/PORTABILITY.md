@@ -9,6 +9,9 @@ and asserts each detector signal reads correctly.
 **Proves:** the shipped detector (`patterns.classify_screen`, imported directly by the
 check — sabotaging it fails the run) and the sidecar lifecycle behave identically across
 OS, tmux version, and Python version.
+> **SUPERSEDED (2026-08-06):** the Linux claim below was closed by a real-CLI run on
+> WSL2 Ubuntu 26.04 — see `docs/results/linux/`. The paragraph is kept for provenance.
+
 **Does not prove:** real-CLI behavior on the target OS. Real-claude-on-**Linux** is declared
 UNVERIFIED (blocked: devbox requires a Tailscale SSH browser approval only the owner can
 grant; putting the owner's OAuth credentials into a container was rejected as a way around it).
