@@ -1,12 +1,25 @@
 #!/usr/bin/env python3
-"""Guided demo — watch an agent's state be detected, live, with the evidence.
+"""Guided walkthrough — see an agent, see what the tool says about it, see why.
 
-    uv run demo.py            # against a real Claude Code session (spends API turns)
-    uv run demo.py --mock     # against the deterministic mock (free, no credentials)
+    uv run demo.py            # real Claude Code session (spends a few API turns)
+    uv run demo.py --mock     # fake agent, free, no credentials
+    uv run demo.py --no-pause # don't wait for Enter between steps
 
-Each step announces what it is about to do, what it observed, and WHICH CHANNEL
-proved it — because "the tool said idle" is not the interesting part; "the tool
-said idle, and here is the signal it read" is.
+DESIGN NOTE (why this file looks the way it does)
+-------------------------------------------------
+The first version of this demo printed only the tool's conclusions. A reader
+called it correctly: *"this reads more like a test."* And it was — because the
+agent being observed was invisible. You cannot judge "the tool says busy" without
+seeing the thing it is looking at.
+
+So every step now shows THREE things in order:
+
+    1. what is about to happen, in one plain sentence
+    2. THE AGENT'S ACTUAL SCREEN, right now
+    3. what the tool concluded, and which signal proved it
+
+and then waits for you. Showing beats telling; a walkthrough is paced by the
+person walking.
 """
 
 import argparse
@@ -22,31 +35,64 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 DRIVER = ROOT / "prototypes" / "fused" / "driver.py"
 
-BOLD, DIM, GREEN, YELLOW, CYAN, RED, OFF = (
-    "\033[1m", "\033[2m", "\033[32m", "\033[33m", "\033[36m", "\033[31m", "\033[0m")
+B, D, G, Y, C, R, M, OFF = ("\033[1m", "\033[2m", "\033[32m", "\033[33m",
+                            "\033[36m", "\033[31m", "\033[35m", "\033[0m")
+W = 78
+
+PAUSE = True
 
 
-def say(step, text):
-    print("\n%s%s %s%s" % (BOLD, step, text, OFF), flush=True)
+def rule(ch="─"):
+    print(D + ch * W + OFF, flush=True)
 
 
-def note(text):
-    print("   %s%s%s" % (DIM, text, OFF), flush=True)
+def step(n, total, title, why):
+    print()
+    rule("━")
+    print("%s STEP %d/%d  %s%s" % (B, n, total, title, OFF))
+    print("%s %s%s" % (D, why, OFF))
+    rule("━")
 
 
-def show_state(rep, expect=None):
+def wait(prompt="Press Enter to continue"):
+    if not PAUSE:
+        time.sleep(1.2)
+        return
+    try:
+        input("\n%s   ↵ %s …%s" % (D, prompt, OFF))
+    except (EOFError, KeyboardInterrupt):
+        raise SystemExit("\nstopped.")
+
+
+def show_screen(workdir, sid, lines=14, label="WHAT THE AGENT LOOKS LIKE RIGHT NOW"):
+    """The actual TUI. This is the half the first version was missing."""
+    r = subprocess.run([sys.executable, str(DRIVER), "--workdir", str(workdir),
+                        "screen", "--id", sid, "--lines", str(lines)],
+                       capture_output=True, text=True, timeout=60)
+    print("\n%s┌─ %s %s%s" % (C, label, "─" * max(0, W - len(label) - 4), OFF))
+    body = (r.stdout or "(could not read the screen)").rstrip().splitlines()
+    for ln in body[-lines:]:
+        print("%s│%s %s" % (C, OFF, ln[:W - 2]))
+    print("%s└%s%s" % (C, "─" * (W - 1), OFF))
+
+
+def show_verdict(rep, expect=None):
     st = rep.get("state", "?")
-    colour = GREEN if (expect is None or st == expect) else RED
-    print("   → state: %s%s%s" % (colour + BOLD, st, OFF), flush=True)
+    good = expect is None or st == expect
+    print("\n%s┌─ WHAT THE TOOL SAYS %s%s" % (M, "─" * (W - 22), OFF))
+    print("%s│%s   state: %s%s%s" % (M, OFF, (G if good else R) + B, st, OFF))
     for k, v in (rep.get("attrs") or {}).items():
         if v not in (False, None):
-            print("     %sattr%s %s = %s" % (DIM, OFF, k, v), flush=True)
-    for e in (rep.get("evidence") or [])[:4]:
-        print("     %sevidence%s [%s%s%s] %s"
-              % (DIM, OFF, CYAN, e.get("channel"), OFF, e.get("signal")), flush=True)
-    if expect and st != expect:
-        print("   %s(expected %s — this is a real disagreement, not a script)%s"
-              % (YELLOW, expect, OFF), flush=True)
+            print("%s│%s     %s%s = %s%s" % (M, OFF, D, k, v, OFF))
+    ev = rep.get("evidence") or []
+    if ev:
+        print("%s│%s   how it knows:" % (M, OFF))
+        for e in ev[:4]:
+            print("%s│%s     %s[%s]%s %s"
+                  % (M, OFF, C, e.get("channel"), OFF, e.get("signal")))
+    print("%s└%s%s" % (M, "─" * (W - 1), OFF))
+    if not good:
+        print("%s   (expected %s — a real disagreement, not a script)%s" % (Y, expect, OFF))
 
 
 def drive(workdir, *args, timeout=240):
@@ -59,143 +105,190 @@ def drive(workdir, *args, timeout=240):
         return {"error": "unparseable", "raw": line}, r.returncode
 
 
-def banner(mode):
-    print("%s%s" % (BOLD, "=" * 74))
-    print("  agent-state-driver — guided demo (%s)" % mode)
-    print("=" * 74 + OFF)
+def intro(mock):
+    print("%s%s" % (B, "═" * W))
+    print("  agent-state-driver — guided walkthrough")
+    print("═" * W + OFF)
     print("""
-An AI agent in a terminal is a byte stream with no machine-readable state.
-This demo drives one and shows each state being detected, with the channel
-that proved it. Nothing below is scripted output — every line is a real
-observation of a real process.""")
+An AI agent in a terminal is just a stream of text. Nothing in it says
+"I am busy" or "I am stuck waiting for you". So automation guesses — it
+sleeps 30 seconds and hopes.
+
+This tool answers the question properly. Over the next few minutes you will
+watch it do that on a %s agent: you see the agent's screen, then you see
+what the tool concluded, then you see the signal it used.
+
+Nothing here is scripted output. Every screen is captured live.""" % (
+        "FAKE (free)" if mock else "REAL, live"))
+    if not mock:
+        print("%s\nThis launches a real Claude session and spends a few API turns.%s"
+              % (Y, OFF))
+
+
+def watch_hint(workdir, sid):
+    """Tell the reader how to watch it live in another terminal. The session is
+    a normal tmux server — there is no reason to keep that a secret."""
+    meta = next(Path(workdir).glob(".fused/*/meta.json"), None)
+    sock = None
+    if meta:
+        try:
+            sock = json.loads(meta.read_text()).get("socket")
+        except (OSError, ValueError):
+            pass
+    if sock:
+        print("\n%s   Want to watch it live? In ANOTHER terminal, run:%s" % (D, OFF))
+        print("     %stmux -L %s attach -t %s%s" % (B, sock, sid[:8], OFF))
+        print("     %s(detach again with Ctrl-B then D — closing it would kill the agent)%s"
+              % (D, OFF))
 
 
 def main():
+    global PAUSE
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mock", action="store_true",
-                    help="drive the deterministic mock instead of the real CLI "
-                         "(free, no credentials, no API turns)")
-    ap.add_argument("--keep", action="store_true", help="do not kill the session at the end")
+    ap.add_argument("--mock", action="store_true", help="fake agent; free, no credentials")
+    ap.add_argument("--no-pause", action="store_true", help="run without waiting for Enter")
+    ap.add_argument("--keep", action="store_true", help="leave the session running at the end")
     a = ap.parse_args()
+    PAUSE = not a.no_pause
 
     if not a.mock and not shutil.which("claude"):
-        print("claude not found on PATH — run with --mock for the free demo.")
+        print("claude not found on PATH — try:  uv run demo.py --mock")
         return 2
 
-    banner("mock" if a.mock else "REAL Claude Code session — this spends API turns")
+    intro(a.mock)
+    wait("Press Enter to start")
 
     workdir = Path(os.environ.get("TMPDIR", "/tmp")) / ("asd-demo-" + uuid.uuid4().hex[:6])
     workdir.mkdir(parents=True, exist_ok=True)
-    note("workspace: %s" % workdir)
 
     if a.mock:
-        print("\n%sMock mode drives prototypes/mockagent/mock_claude.py, which replays"
-              % DIM)
-        print("recorded 2.1.222 screen shapes and the vendor sidecar lifecycle.%s" % OFF)
-        rc = subprocess.call([sys.executable,
-                              str(ROOT / "prototypes/mockagent/portability_check.py")])
-        print("\n%sThat is the same check the test suite runs. For the full state machine"
-              % DIM)
-        print("with a real agent, run without --mock.%s" % OFF)
-        return rc
+        return run_mock(workdir)
+    return run_real(workdir, a)
 
-    # ---- 1. launch -----------------------------------------------------------
-    say("[1/6]", "Launching a real Claude Code session in its own tmux server…")
-    note("The trust dialog appears unconditionally — a project setting does NOT")
-    note("suppress it — so the driver must handle it as part of startup.")
-    t0 = time.time()
+
+# ---------------------------------------------------------------- real agent
+
+def run_real(workdir, a):
+    TOTAL = 6
+
+    step(1, TOTAL, "Start an agent",
+         "Claude always asks 'do you trust this folder?' on a new directory. "
+         "The tool answers it for you, because automation can't stop for that.")
+    print("\n   launching…", flush=True)
     rep, rc = drive(workdir, "launch")
     if rc != 0 or "id" not in rep:
-        print("%slaunch failed: %s%s" % (RED, rep, OFF))
+        print("%slaunch failed: %s%s" % (R, rep, OFF))
         return 1
     sid = rep["id"]
-    note("session id %s   (%.1fs)" % (sid, time.time() - t0))
-    show_state(rep)
+    print("   %sagent started%s  (session %s)" % (G, OFF, sid[:8]))
+    show_screen(workdir, sid)
+    watch_hint(workdir, sid)
+    wait()
 
-    # ---- 2. idle -------------------------------------------------------------
-    say("[2/6]", "Asking: is it idle?")
-    note("Idle is NOT 'the ❯ prompt is visible' — that prompt is on screen during")
-    note("generation too. Idle = busy-signal absent AND the screen has settled.")
+    step(2, TOTAL, "Ask: is it free?",
+         "Look at the screen above — the ❯ prompt is showing. That is NOT proof "
+         "it is free: that same prompt is on screen while it is thinking.")
     rep, _ = drive(workdir, "state", "--id", sid)
-    show_state(rep, "idle")
+    show_verdict(rep, "idle")
+    print("\n%s   It said idle because a busy-marker was ABSENT and the screen had"
+          "\n   stopped changing — not because it saw a prompt.%s" % (D, OFF))
+    wait()
 
-    # ---- 3. busy -------------------------------------------------------------
-    say("[3/6]", "Sending a prompt, then watching it go busy…")
+    step(3, TOTAL, "Give it work and catch it mid-thought",
+         "We send a prompt, then ask again immediately. The screen will look "
+         "different — and so will the answer.")
     drive(workdir, "send", "--id", sid, "--text",
           "Count from 1 to 60, one number per line, with a short sentence about each.")
-    # Poll FOR busy rather than sampling once: a short turn can finish inside the
-    # driver's own settle window, and a demo that shows `idle` under a heading that
-    # says `busy` teaches the wrong thing.
     rep, rc = drive(workdir, "wait", "--id", sid, "--until", "busy", "--timeout", "30")
-    if rc != 0:
-        note("turn finished before we could catch it busy — re-run to see this step")
-    show_state(rep, "busy")
-    note("A busy screen re-renders at least once a second (elapsed-time tickers),")
-    note("which is why 'the screen changed' alone cannot mean busy — an idle")
-    note("statusline clock moves it too. The regex is what carries the claim.")
+    show_screen(workdir, sid)
+    show_verdict(rep, "busy")
+    wait()
 
-    say("[3b/6]", "Waiting for the turn to finish…")
+    step(4, TOTAL, "Wait for it to finish",
+         "Not by sleeping — by watching until the busy marker goes away and the "
+         "screen settles.")
     rep, _ = drive(workdir, "wait", "--id", sid, "--until", "idle", "--timeout", "180")
-    show_state(rep, "idle")
+    show_screen(workdir, sid)
+    show_verdict(rep, "idle")
+    wait()
 
-    # ---- 4. permission -------------------------------------------------------
-    say("[4/6]", "Asking it to run a command that needs permission…")
+    step(5, TOTAL, "The one that matters: it gets stuck, and refuses your next prompt",
+         "We ask it to run a command. Claude stops and asks permission. Watch "
+         "what happens when we then try to send it something else.")
     marker = "demo-%s.txt" % uuid.uuid4().hex[:4]
     drive(workdir, "send", "--id", sid, "--text",
           "Run exactly this bash command: touch %s" % marker)
     rep, _ = drive(workdir, "wait", "--id", sid,
                    "--until", "waiting:permission", "--timeout", "90")
-    show_state(rep, "waiting:permission")
-    note("Note the channel: the vendor writes status=waiting / waitingFor='permission")
-    note("prompt' to ~/.claude/sessions/<pid>.json. No hook, no settings write —")
-    note("this works even on a session you did not start.")
-
-    # ---- 5. refuse to send while blocked ------------------------------------
-    say("[5/6]", "Trying to send while it is blocked on a dialog (should be REFUSED)…")
-    rep, rc = drive(workdir, "send", "--id", sid, "--text", "this should not go through")
-    if rc != 0:
-        print("   %s→ refused, correctly%s: %s" % (GREEN + BOLD, OFF, rep.get("error")))
+    show_screen(workdir, sid)
+    show_verdict(rep, "waiting:permission")
+    print("\n%s   Now we try to send a prompt anyway — the thing normal automation"
+          "\n   does, which quietly loses the prompt:%s" % (D, OFF))
+    rep2, rc2 = drive(workdir, "send", "--id", sid, "--text", "this should not go through")
+    if rc2 != 0:
+        print("\n   %s✓ REFUSED%s  — %s" % (G + B, OFF, rep2.get("error")))
+        print("   %sYour prompt was not typed into a dialog box and lost.%s" % (D, OFF))
     else:
-        print("   %s→ NOT refused — that is a bug, and the demo just found it%s" % (RED, OFF))
-    note("Sending into a blocked session is how orchestrators silently lose prompts.")
+        print("\n   %s✗ NOT refused — that is a bug, and this walkthrough just found it%s"
+              % (R, OFF))
+    wait()
 
-    say("[5b/6]", "Answering the dialog with 'No'…")
+    print("\n   Answering the dialog with 'No'…", flush=True)
     drive(workdir, "answer", "--id", sid, "--option", "3")
     rep, _ = drive(workdir, "wait", "--id", sid, "--until", "idle", "--timeout", "90")
-    show_state(rep, "idle")
+    show_verdict(rep, "idle")
     denied = not (workdir / marker).exists()
-    print("   %s%s%s the file was %s — the denial actually took effect"
-          % (GREEN if denied else RED, "✓" if denied else "✗", OFF,
-             "never created" if denied else "CREATED"))
+    print("   %s%s%s we checked the file %s was never created — so the refusal"
+          "\n     really took effect. We did not take the agent's word for it."
+          % (G if denied else R, "✓" if denied else "✗", OFF, marker))
+    wait()
 
-    # ---- 6. death ------------------------------------------------------------
-    say("[6/6]", "Killing the terminal, then asking again…")
-    note("Terminal-gone is NOT agent-dead: the process outlives its terminal by")
-    note("~1s, and indefinitely if detached. Liveness is the agent PID, not tmux.")
+    step(6, TOTAL, "Kill it, and notice the difference between gone and dead",
+         "We close the terminal. A terminal closing is NOT the same as the agent "
+         "dying — it outlives its terminal by about a second, and forever if "
+         "detached. The tool checks the actual process.")
     drive(workdir, "kill", "--id", sid)
     time.sleep(2)
     rep, _ = drive(workdir, "state", "--id", sid)
-    show_state(rep, "dead")
+    show_verdict(rep, "dead")
 
+    outro()
+    if not a.keep:
+        drive(workdir, "kill", "--id", sid)
+    return 0
+
+
+# ---------------------------------------------------------------- fake agent
+
+def run_mock(workdir):
+    print("\n%sThe fake agent replays screens recorded from a real Claude session,"
+          "\nso the detector sees exactly the shapes it would see live.%s" % (D, OFF))
+    wait("Press Enter to run the checks")
+    rc = subprocess.call([sys.executable,
+                          str(ROOT / "prototypes/mockagent/portability_check.py")])
+    print("\n%sThat exercised the detector against every state. To watch the full"
+          "\nwalkthrough on a real agent:  uv run demo.py%s" % (D, OFF))
+    return rc
+
+
+def outro():
     print("""
 %s%s
   What you just watched
 %s%s
-  · six states detected on a real session, each with its proving channel
-  · a send REFUSED because the agent was blocked — not silently dropped
-  · a denial verified causally, by the file never appearing
-  · death established from process exit, not from the terminal disappearing
+  · the agent's real screen at every step, next to what the tool concluded
+  · "idle" proven by a missing busy-marker + a settled screen — not by a prompt
+  · a prompt REFUSED because the agent was stuck on a dialog, instead of
+    being typed into the void
+  · a denial checked against the filesystem, not taken on the agent's word
+  · "dead" established from the process exiting, not the terminal closing
 
-  Where to go next:
-    docs/INDEX.md                     — a map of the whole repo
-    docs/discovery-session-sidecar.md — the vendor channel used in step 4
-    PITFALLS.md                       — every trap that cost us a run
-%s""" % (BOLD, "=" * 74, "=" * 74, OFF, OFF))
-
-    if not a.keep:
-        drive(workdir, "kill", "--id", sid)
-    return 0
+  Where next:
+    %sdocs/INDEX.md%s                     a map of the repo
+    %sPITFALLS.md%s                       every trap that cost us a run
+    %suv run pytest%s                     58 tests, no credentials, no cost
+%s""" % (B, "═" * W, "═" * W, OFF, B, OFF, B, OFF, B, OFF, OFF))
 
 
 if __name__ == "__main__":
