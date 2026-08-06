@@ -1,8 +1,7 @@
 # agent-state-driver
 
 Reliable **state detection** and **programmatic driving** of interactive CLI AI agents.
-Verified against the real CLI on **macOS** and **Windows**; on **Linux** the detector is
-verified against a deterministic fixture only (see Honest coverage).
+Verified against the **real CLI on macOS, Linux and Windows**.
 
 ## The problem
 
@@ -124,12 +123,11 @@ Requires `tmux` and Python 3.9+ on macOS/Linux. On Windows the hosting layer is 
 
 ## Honest coverage
 
-Verified against the real CLI: one build (2.1.222); states `starting`, `busy`, `idle`,
-`waiting:permission`, `dead`; on macOS (full race) and Windows (all four channels).
-Linux: detector + sidecar lifecycle via the fixture only.
+Verified against the real CLI: states `starting`, `busy`, `idle`, `waiting:permission`,
+`dead` — on **macOS** (full race, 2.1.222), **Linux** (WSL2 Ubuntu 26.04, kernel 6.18,
+2.1.223 — [record](docs/results/linux/)) and **Windows** (all four channels, 2.1.222).
 
 **Not verified:**
-- real-CLI-on-Linux — blocked on host access, not on effort
 - **attached-posture driving** — the mechanism is proven (hook retrofit, Q1) and the
   enabler is proven (sidecar needs no spawn ownership), but **no driver implements an
   `attach` verb** and no scenario exercises it
