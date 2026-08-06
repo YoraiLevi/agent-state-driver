@@ -253,16 +253,17 @@ class Cursor:
 
 
 class Journal:
-    """Append-only sink for state edges. F4 swaps this for the bus; the SHAPE of
-    what is written is the contract, not the destination."""
+    """Adapter onto the bus sink (F4). The Warden signs at this boundary — the
+    driver stays stdlib-only and unsigned, so the attestation belongs here, where
+    a node identity already exists and where the edge crosses the machine."""
 
-    def __init__(self):
-        self.path = state_root() / "edges.jsonl"
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, sink=None):
+        import bus
+        self.sink = sink or bus.get_sink()
+        self.path = getattr(self.sink, "path", None)
 
     def emit(self, edge: dict):
-        with open(self.path, "a") as fh:
-            fh.write(json.dumps(edge) + "\n")
+        return self.sink.publish(edge)
 
 
 def sweep_once(holder, owned, cursor, journal, workdir):

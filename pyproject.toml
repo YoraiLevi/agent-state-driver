@@ -15,13 +15,18 @@ dependencies = []
 
 [project.optional-dependencies]
 test = ["pytest>=7.4"]
+# The DRIVERS stay stdlib-only on purpose — that is what makes them droppable on
+# a strange machine. The fleet layer is infrastructure and may have deps; signing
+# is the first. Without it, edges carry sig_alg="none" and `replay --strict`
+# refuses them, loudly.
+fleet = ["cryptography>=42"]
 
 [project.urls]
 Homepage = "https://github.com/YoraiLevi/agent-state-driver"
 Issues = "https://github.com/YoraiLevi/agent-state-driver/issues"
 
 [dependency-groups]
-dev = ["pytest>=7.4"]
+dev = ["pytest>=7.4", "cryptography>=42"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
