@@ -182,7 +182,8 @@ agentirc start --name $(hostname -s) --port 6667      # macOS / Linux
 the server enforces it (`:culture 432 * obs1 :Nickname must start with culture-`). Naming the
 server after the host is what makes `<host>-<suffix>` nicks legal.
 
-**Windows:** `agentirc start` and `culture server start` both `sys.exit(1)` with *"Daemon mode
+**Windows** *(corrected 2026-08-06 — see §9 and windows-persistence-answer.md; `serve` works
+natively, only `start` is refused)*: `agentirc start` and `culture server start` both `sys.exit(1)` with *"Daemon mode
 not supported on Windows. Use --foreground."* Run `agentirc serve --foreground` under our own
 `schtasks` detach. This is our problem, not theirs — see [What we keep building](#4-what-we-keep-building).
 
@@ -361,9 +362,17 @@ Ordered by value. Each row names the concrete change.
 8. **Python floors:** `agentirc-cli` ≥3.11, `culture` ≥3.12, `agentfront` ≥3.12. **Our drivers
    are stdlib-only 3.9+.** The moment we `import` either, we inherit the floor and 27
    transitive packages (grpcio, protobuf). Keep the socket.
-9. **Windows is an explicit refusal, not an omission.** `agentirc start` / `culture server
-   start` exit 1; `agent-lifecycle` declares Windows a non-goal; culture#262 reports success it
-   did not achieve. Do not let a fleet design assume `agentirc start` exists everywhere.
+9. **Windows: the refusal is DAEMONIZATION only — corrected 2026-08-06 by testing.**
+   This entry previously read *"Windows is an explicit refusal, not an omission."* That
+   overstated it. `agentirc start` exits 1 because `_daemonize_server` needs `os.fork`
+   (`agentirc/cli.py:570-572`), and its own message says **"Use --foreground."**
+   **Verified on Windows 11 build 26200:** `agentirc-cli` 9.12.0 installs under `uv`, serves,
+   and completes a full `PRESENCE` publish + `PRESENCELIST` round-trip. The server, the wire
+   and the presence protocol all work natively.
+   Still true: `agent-lifecycle` declares Windows a non-goal, and culture#262 reports success
+   it did not achieve. So do not assume `agentirc start` works everywhere — but **do** assume
+   `agentirc serve` does, and supply the lifetime yourself
+   (see [windows-persistence-answer.md](windows-persistence-answer.md)).
 10. **`agent-lifecycle` is asyncio throughout and its GitHub repo is private (404).** We can
     install and read the sdist; we cannot file issues or track the seam-ratification its own
     charter lists as open (issue #10). Pin the version; treat the API as frozen, not a partnership.
